@@ -1,1 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#101010" />
+  <meta name="description" content="AXO — personal assistant by AXU." />
+  <title>AXO — AXU Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="sidebar-top">
+        <button class="profile-row" type="button" data-panel="chat" aria-label="Go to AXO home">
+          <span class="profile-avatar"><span>A</span></span>
+          <span class="profile-copy"><strong>AXO</strong><small>AN AXU ASSISTANT</small></span>
+          <span class="profile-more">···</span>
+        </button>
+        <div class="sidebar-shortcuts">
+          <button class="side-action" type="button" data-panel="chat"><span class="side-action-icon">＋</span><span>New conversation</span></button>
+          <button class="side-action" type="button" data-panel="news"><span class="side-action-icon">◷</span><span>World intelligence</span><span class="side-badge" id="newsCount">LIVE</span></button>
+        </div>
+      </div>
 
+      <div class="sidebar-scroll">
+        <div class="side-section-label">WORKSPACE</div>
+        <button class="nav-item active" data-panel="chat" type="button"><span class="nav-icon">◉</span><span>Chat</span><span class="active-mark"></span></button>
+        <button class="nav-item" data-panel="apis" type="button"><span class="nav-icon">⌘</span><span>API directory</span><span class="nav-count">2K+</span></button>
+
+        <div class="side-section-head"><span>QUICK COMMANDS</span><span class="section-chevron">⌄</span></div>
+        <button class="quick-command" data-command="What's the weather in Srinagar?" type="button"><span class="quick-icon">☼</span><span>Weather in Srinagar</span></button>
+        <button class="quick-command" data-command="Show Srinagar in satellite view" type="button"><span class="quick-icon">⌖</span><span>Satellite map</span></button>
+        <button class="quick-command" data-command="Latest headlines" type="button"><span class="quick-icon">▤</span><span>Latest headlines</span></button>
+        <button class="quick-command" data-command="Show pictures of Earth from space" type="button"><span class="quick-icon">✧</span><span>Image search</span></button>
+
+        <div class="side-section-head"><span>YOUR LIBRARY</span><span class="section-chevron">⌄</span></div>
+        <button class="nav-item" data-panel="music" type="button"><span class="nav-icon">♫</span><span>Music</span></button>
+        <button class="nav-item" data-panel="videos" type="button"><span class="nav-icon">▷</span><span>Video archive</span></button>
+        <button class="nav-item" data-panel="notes" type="button"><span class="nav-icon">▧</span><span>Memory notes</span></button>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="connection-row"><span class="connection-dot"></span><span id="connectionText">Connecting to local core</span></div>
+        <div class="sidebar-footer"><span>AXO WEB</span><span>PYDROID EDITION</span></div>
+      </div>
+    </aside>
+
+    <div class="sidebar-scrim" id="sidebarScrim"></div>
+
+    <main class="main-area">
+      <span id="currentSection" class="visually-hidden">COMMAND CENTRE</span>
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="round-icon menu-button" id="mobileMenu" type="button" aria-label="Open menu"><span>☰</span></button>
+          <div class="model-pill"><span class="model-indicator"></span><strong>AXO</strong><span class="model-divider"></span><span class="model-mode">ASSISTANT</span></div>
+          <div class="mode-switch" id="modeSwitch" role="group" aria-label="Assistant mode"><button type="button" class="mode-tab active" data-mode="chat">Chat</button><button type="button" class="mode-tab" data-mode="node">Node</button></div>
+        </div>
+        <div class="topbar-right">
+          <div class="status-chip"><span class="status-dot"></span><span id="apiStatus">LOCAL CORE</span></div>
+          <button class="round-icon clear-button" id="clearChat" type="button" title="New conversation" aria-label="New conversation"><span>＋</span></button>
+        </div>
+      </header>
+
+      <div class="content-wrap">
+        <section class="panel active" id="panel-chat">
+          <div class="mode-view chat-mode-view active" id="chatModeView">
+            <div class="chat-screen">
+              <div class="chat-scroll-area" id="chatScrollArea">
+                <div class="welcome-screen">
+                  <div class="assistant-orb" id="hologramStage" data-state="idle" aria-label="AXO status"><span class="orb-glow"></span><span class="orb-ring orb-ring-a"></span><span class="orb-ring orb-ring-b"></span><span class="orb-face"><i></i><i></i></span></div>
+                  <div class="welcome-title">Hello, I'm <strong>AXO.</strong></div>
+                  <div class="welcome-subtitle">What can I help with?</div>
+                  <div class="welcome-status"><span class="connection-dot"></span><span id="orbStatus">SYSTEM STANDING BY</span></div>
+                </div>
+                <div class="chat-window" id="chatWindow" aria-live="polite"></div>
+              </div>
+              <div class="composer-dock">
+                <div class="suggestions" id="suggestions">
+                  <button type="button" data-prompt="What's the weather in Srinagar?"><span class="suggestion-icon">☼</span>Weather</button>
+                  <button type="button" data-prompt="Show Srinagar in satellite view"><span class="suggestion-icon">⌖</span>Satellite map</button>
+                  <button type="button" data-prompt="Latest headlines"><span class="suggestion-icon">▤</span>News</button>
+                  <button type="button" data-prompt="Show me pictures of Saturn"><span class="suggestion-icon">✧</span>Images</button>
+                </div>
+                <form class="composer" id="chatForm">
+                  <div class="composer-main"><span class="composer-plus" aria-hidden="true">＋</span><textarea id="messageInput" rows="1" placeholder="Message AXO…" autocomplete="off" aria-label="Message AXO"></textarea><button type="button" class="voice-button" id="voiceButton" title="Voice command" aria-label="Start voice command"><span class="voice-glyph">⌁</span></button><button type="submit" class="send-button" id="sendButton" aria-label="Send message">↑</button></div>
+                  <div class="composer-bottom"><span id="modeHint">CHAT · TEXT + VOICE</span><span>ENTER TO SEND · SHIFT + ENTER FOR NEW LINE</span></div>
+                </form>
+                <div class="privacy-note">AXO · An AXU assistant · Provider keys stay on this device.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mode-view node-mode-view" id="nodeModeView" aria-hidden="true">
+            <div class="node-topline"><span class="node-live-dot"></span><span>AXO NODE</span><span class="node-topline-divider"></span><span id="nodeStatus">STANDING BY</span></div>
+            <div class="node-stage" id="nodeStage" data-state="idle"><canvas id="nodeCanvas" aria-hidden="true"></canvas><div class="node-core-wrap"><div class="node-core-halo"></div><div class="node-core-ring ring-one"></div><div class="node-core-ring ring-two"></div><div class="node-core"><span class="node-core-inner"></span></div></div></div>
+            <div class="node-caption"><strong id="nodeHeadline">AXO is listening.</strong><span id="nodeSubline">Tap the microphone and speak naturally.</span></div>
+            <div class="node-level-row"><span>INPUT LEVEL</span><div class="node-level-track"><i id="nodeLevelBar"></i></div><b id="nodeDb">— dBFS</b></div>
+            <button class="node-mic-button" id="nodeVoiceButton" type="button" aria-label="Start voice command"><span class="node-mic-icon">⌁</span><span>Speak to AXO</span></button>
+            <div class="node-footnote">VOICE-ONLY MODE · RESPONSES ARE SPOKEN, NOT PRINTED</div>
+          </div>
+        </section>
+
+        <section class="panel secondary-panel" id="panel-news">
+          <div class="section-heading"><div><span class="section-eyebrow">WORLD INTELLIGENCE</span><h1>News</h1><p>Current headlines from connected news sources.</p></div><span class="section-live"><i></i> <span id="newsProvider">LIVE FEED</span></span></div>
+          <p class="news-provider-note" id="newsProviderNotice" aria-live="polite"></p>
+          <div class="filter-row" id="newsFilters">
+            <button class="filter active" data-category="general" type="button">Top</button><button class="filter" data-category="technology" type="button">Technology</button><button class="filter" data-category="business" type="button">Business</button><button class="filter" data-category="science" type="button">Science</button><button class="filter" data-category="sports" type="button">Sports</button><button class="filter" data-category="entertainment" type="button">Entertainment</button>
+          </div>
+          <div class="news-grid" id="newsGrid"><div class="empty-state">Loading news feed…</div></div>
+        </section>
+
+        <section class="panel secondary-panel" id="panel-apis">
+          <div class="section-heading"><div><span class="section-eyebrow">CONNECTED SOURCES</span><h1>API directory</h1><p>Discover public data sources. Existing AXO integrations remain available in chat.</p></div></div>
+          <div class="api-directory-note">Community-maintained GitHub directory. “No key” means no API key is listed; other APIs may have free tiers but require registration.</div>
+          <div class="api-toolbar"><input id="apiSearch" type="search" placeholder="Search 2,000+ public API listings…"><span id="apiCount">Loading catalogue</span></div>
+          <div class="api-filter-row" id="apiFilters"><button type="button" class="api-filter active" data-api-filter="all">All</button><button type="button" class="api-filter" data-api-filter="keyless">No key</button><button type="button" class="api-filter" data-api-filter="key">Key / auth</button></div>
+          <div class="api-grid" id="apiGrid"><div class="empty-state">Loading API catalogue…</div></div>
+        </section>
+
+        <section class="panel secondary-panel" id="panel-music">
+          <div class="section-heading"><div><span class="section-eyebrow">YOUR LIBRARY</span><h1>Music</h1><p>Saved music shortcuts.</p></div></div>
+          <div class="library-grid" id="musicGrid"></div>
+        </section>
+        <section class="panel secondary-panel" id="panel-videos">
+          <div class="section-heading"><div><span class="section-eyebrow">YOUR LIBRARY</span><h1>Video archive</h1><p>Saved video shortcuts.</p></div></div>
+          <div class="library-grid" id="videosGrid"></div>
+        </section>
+        <section class="panel secondary-panel" id="panel-notes">
+          <div class="section-heading"><div><span class="section-eyebrow">LOCAL MEMORY</span><h1>Memory notes</h1><p>Notes stored locally beside the Python backend.</p></div></div>
+          <form class="note-form" id="noteForm"><input id="noteInput" maxlength="500" placeholder="Write a note to save…"><button type="submit">Save note <span>＋</span></button></form>
+          <div class="notes-list" id="notesList"></div><button class="text-button" id="clearNotes" type="button">Clear all notes</button>
+        </section>
+
+        <footer class="main-footer"><span>AXO · AN AXU ASSISTANT</span><span>LOCAL CORE <b>●</b></span></footer>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+    // Keep the mobile navigation scrim in sync with the existing sidebar toggle.
+    (() => {
+      const sidebar = document.getElementById('sidebar');
+      const scrim = document.getElementById('sidebarScrim');
+      const menu = document.getElementById('mobileMenu');
+      const sync = () => scrim.classList.toggle('visible', sidebar.classList.contains('open'));
+      menu.addEventListener('click', () => requestAnimationFrame(sync));
+      scrim.addEventListener('click', () => { sidebar.classList.remove('open'); sync(); });
+      document.querySelectorAll('.nav-item, .quick-command, .side-action').forEach(el => el.addEventListener('click', () => {
+        sidebar.classList.remove('open'); sync();
+      }));
+      document.querySelector('.side-action[data-panel=\"chat\"]')?.addEventListener('click', () => { document.querySelector('.nav-item[data-panel=\"chat\"]')?.click(); document.getElementById('clearChat').click(); });
+      document.querySelector('.side-action[data-panel=\"news\"]')?.addEventListener('click', () => window.showPanel?.('news'));
+    })();
+  </script>
+</body>
+</html>
