@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#212121" />
   <meta name="description" content="AXO — personal AI assistant." />
   <title>AXO</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -102,7 +106,7 @@
 
         <section class="panel secondary-panel" id="panel-bots">
           <div class="section-heading"><div><span class="section-eyebrow">YOUR TEAM</span><h1>Bots</h1><p>Give each bot a role and a colour. Chat with one, or let a CEO bot run the team.</p></div></div>
-          <div class="bots-tabs" id="botsTabs"><button data-bt="studio" class="on" type="button">Studio</button><button data-bt="sheet" type="button">Sheet</button></div>
+          <div class="bots-tabs" id="botsTabs"><button data-bt="studio" class="on" type="button">Studio</button><button data-bt="sheet" type="button">Sheet</button><button id="botExport" type="button">Export team</button><button id="botImport" type="button">Import team</button><input id="botImportFile" type="file" accept="application/json" hidden></div>
           <div id="botsStudio">
             <div class="bot-strip" id="botStrip"></div>
             <div class="bots-grid">
@@ -112,6 +116,8 @@
                 <label>Role (what it does)<textarea id="bfRole" rows="3" maxlength="500" placeholder="e.g. You write friendly, short emails and send them for me."></textarea></label>
                 <div class="bf-row"><label>Colour<input id="bfColor" type="color" value="#4f9dff"></label><label>Reports to<select id="bfBoss"></select></label></div>
                 <label>Can use<div class="bf-tools" id="bfTools"></div></label>
+                <label>Knowledge / notes<textarea id="bfKnow" rows="3" maxlength="4000" placeholder="Facts this bot should know (prices, policies, tone…)"></textarea></label>
+                <label>Add a file to its knowledge<input id="bfFile" type="file" accept=".txt,.md,.csv,.json"></label>
                 <label>Link<input id="bfLink" type="url" placeholder="https://… (docs, sheet, profile)"></label>
                 <div class="bf-actions"><button type="submit" class="pill-button go">Save bot</button><button type="button" class="pill-button" id="bfNew">New bot</button><button type="button" class="pill-button danger" id="bfDelete">Delete</button></div>
               </form>
@@ -155,6 +161,8 @@
         <button data-sec="ai" type="button">AI & API</button>
         <button data-sec="integrations" type="button">Integrations</button>
         <button data-sec="contacts" type="button">Contacts</button>
+        <button data-sec="memory" type="button">Memory</button>
+        <button data-sec="schedules" type="button">Schedules</button>
         <button data-sec="library" type="button">Library</button>
         <button data-sec="data" type="button">Data</button>
         <button data-sec="about" type="button">About</button>
@@ -164,6 +172,7 @@
           <label class="setting-row"><span><strong>Your name</strong><small>AXO greets you with this.</small></span><input id="nameSetting" maxlength="30" placeholder="Your name"></label>
           <label class="setting-row"><span><strong>Call me</strong><small>How AXO addresses you.</small></span><select id="addressSetting"><option value="name">My name</option><option value="Sir">Sir</option><option value="Madam">Madam</option><option value="Boss">Boss</option><option value="namesir">Name + Sir</option><option value="custom">Custom…</option></select></label>
           <label class="setting-row" id="customAddressRow"><span><strong>Custom title</strong><small>Anything you like.</small></span><input id="customAddressSetting" maxlength="30" placeholder="e.g. Commander"></label>
+          <label class="setting-row"><span><strong>Your city</strong><small>For weather in your daily briefing.</small></span><input id="citySetting" maxlength="40" placeholder="e.g. Srinagar"></label>
           <label class="setting-row"><span><strong>Show greeting</strong><small>“Good morning, …” on the home screen.</small></span><input id="greetShowSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO. Some browsers need one tap before audio can play.</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Welcome chime</strong><small>Play a soft original sound when AXO greets you.</small></span><input id="greetChimeSetting" type="checkbox" class="toggle-input"></label>
@@ -178,9 +187,10 @@
         </section>
         <section class="sp-sec" id="sec-voice"><h3>Voice</h3>
           <label class="setting-row"><span><strong>Voice replies</strong><small>Read AXO's replies aloud.</small></span><input id="voiceReplySetting" type="checkbox" class="toggle-input"></label>
-          <label class="setting-row"><span><strong>AXO voice</strong><small>Neural voice used for speech.</small></span><select id="voiceNameSetting"><option value="en-GB-RyanNeural">Ryan (UK, male)</option><option value="en-GB-SoniaNeural">Sonia (UK, female)</option><option value="en-IN-PrabhatNeural">Prabhat (India, male)</option><option value="en-IN-NeerjaNeural">Neerja (India, female)</option><option value="en-US-GuyNeural">Guy (US, male)</option><option value="en-US-JennyNeural">Jenny (US, female)</option></select></label>
+          <label class="setting-row"><span><strong>AXO voice</strong><small>Neural voice used for speech.</small></span><select id="voiceNameSetting"><option value="en-GB-RyanNeural">Ryan (UK, male)</option><option value="en-GB-SoniaNeural">Sonia (UK, female)</option><option value="en-IN-PrabhatNeural">Prabhat (India, male)</option><option value="en-IN-NeerjaNeural">Neerja (India, female)</option><option value="en-US-GuyNeural">Guy (US, male)</option><option value="en-US-JennyNeural">Jenny (US, female)</option><option value="hi-IN-MadhurNeural">Madhur (Hindi, male)</option><option value="hi-IN-SwaraNeural">Swara (Hindi, female)</option><option value="ur-PK-AsadNeural">Asad (Urdu, male)</option><option value="ur-PK-UzmaNeural">Uzma (Urdu, female)</option><option value="ur-IN-GulNeural">Gul (Urdu India, female)</option><option value="ur-IN-SalmanNeural">Salman (Urdu India, male)</option></select></label>
           <label class="setting-row"><span><strong>Speech speed</strong><small id="rateLabel">Normal</small></span><input id="voiceRateSetting" type="range" min="-30" max="30" step="5"></label>
-          <label class="setting-row"><span><strong>Voice input language</strong><small>Language used by microphone input.</small></span><select id="voiceLanguageSetting"><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="en-US">English (US)</option><option value="hi-IN">Hindi</option></select></label>
+          <label class="setting-row"><span><strong>Wake word “Hey AXO”</strong><small>Say it to open voice mode hands-free. Needs the page open and uses the mic and battery.</small></span><input id="wakeWordSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Voice input language</strong><small>Language used by microphone input.</small></span><select id="voiceLanguageSetting"><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="en-US">English (US)</option><option value="hi-IN">Hindi</option><option value="ur-PK">Urdu (Pakistan)</option><option value="ur-IN">Urdu (India)</option></select></label>
         </section>
         <section class="sp-sec" id="sec-chat"><h3>Chat & media</h3>
           <label class="setting-row"><span><strong>Enter to send</strong><small>Use Shift + Enter for a new line.</small></span><input id="enterSendSetting" type="checkbox" class="toggle-input"></label>
@@ -257,6 +267,13 @@
           </div>
           <h4 class="int-h">Built-in public data integrations</h4>
           <p class="settings-footnote">No API keys needed: weather, maps/geocoding, Wikipedia, image search, news feeds, earthquakes, ISS tracking, currency rates, public holidays, GitHub search, books, recipes, dictionary, country facts, space news, natural events, species data, word tools, trivia and World Bank indicators. Provider availability and rate limits can vary.</p>
+          <h4 class="int-h">Calendar (read-only)</h4>
+          <label class="setting-row stack"><span><strong>Secret iCal link</strong><small>Google Calendar → Settings → your calendar → “Secret address in iCal format”. AXO shows upcoming events, and can open a prefilled event for you to save.</small></span><input id="calIcs" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"></label>
+          <h4 class="int-h">Google Sheets</h4>
+          <label class="setting-row stack"><span><strong>Apps Script web-app link (to add rows)</strong><small>Reading a sheet only needs “Anyone with the link can view”. To add rows, create an Apps Script web app with <code>function doPost(e){SpreadsheetApp.getActiveSheet().appendRow(JSON.parse(e.postData.contents).values);return ContentService.createTextOutput("ok")}</code>, deploy it for “Anyone”, and paste its link.</small></span><input id="sheetHook" placeholder="https://script.google.com/macros/s/…/exec"></label>
+          <h4 class="int-h">WhatsApp Business</h4>
+          <label class="setting-row"><span><strong>Access token</strong><small>From Meta for Developers → WhatsApp → API setup.</small></span><input id="waToken" type="password" autocomplete="off"></label>
+          <label class="setting-row"><span><strong>Phone number ID</strong><small>Shown on the same page.</small></span><input id="waPhone"></label>
           <h4 class="int-h">Facebook & Instagram</h4>
           <p class="settings-footnote">AXO can open and search these services, but cannot read private feeds or messages through the public shortcuts.</p>
         </section>
@@ -264,11 +281,23 @@
           <p class="settings-footnote">One per line as <b>name: number</b>. Then say “call Ammi”, “message Ali on WhatsApp”. AXO opens your dialer or chat with the number filled in — you tap to call/send.</p>
           <textarea id="contactsText" rows="8" class="big-area" placeholder="ammi: +919876543210&#10;ali: +911234567890"></textarea>
         </section>
+        <section class="sp-sec" id="sec-memory"><h3>Memory</h3>
+          <p class="settings-footnote">Things AXO remembers about you. Say “remember that I like jazz” or add one here. Saved in this browser.</p>
+          <form class="note-form" id="memForm"><input id="memInput" maxlength="160" placeholder="e.g. My shop is called Chilly Bhai" required><button type="submit">Add <span>＋</span></button></form>
+          <div id="memList"></div>
+        </section>
+        <section class="sp-sec" id="sec-schedules"><h3>Schedules</h3>
+          <p class="settings-footnote">Run a request automatically at a time each day, e.g. “daily briefing” at 08:00. It runs while AXO is open (a phone browser can pause background tabs).</p>
+          <form class="note-form" id="schForm"><input id="schTime" type="time" value="08:00" required style="max-width:120px"><input id="schPrompt" maxlength="200" placeholder="What should AXO do?" value="daily briefing" required><button type="submit">Add <span>＋</span></button></form>
+          <div id="schList"></div>
+        </section>
         <section class="sp-sec danger-zone" id="sec-data"><h3>Data & privacy</h3>
           <div class="setting-row"><span><strong>Export conversations</strong><small>Download a JSON backup of your local chats.</small></span><button class="pill-button" id="exportChats" type="button">Export</button></div>
           <div class="setting-row"><span><strong>Import conversations</strong><small>Restore a backup JSON file into this browser.</small></span><button class="pill-button" id="importChats" type="button">Import</button><input type="file" id="importChatsFile" accept="application/json,.json" hidden></div>
           <div class="setting-row"><span><strong>Export preferences</strong><small>Download theme and app preferences without saved credentials.</small></span><button class="pill-button" id="exportPreferences" type="button">Export</button></div>
           <div class="setting-row"><span><strong>Clear saved connection keys</strong><small>Remove AI, email, GitHub, Firebase and Telegram credentials from this browser.</small></span><button class="danger-button" id="clearCredentials" type="button">Clear keys</button></div>
+          <div class="setting-row"><span><strong>Backup</strong><small>Settings, memory, schedules and bots as a file (passwords and API keys are left out). Use it to move to another device.</small></span><span style="display:flex;gap:6px"><button class="pill-button" id="bkExport" type="button">Export</button><button class="pill-button" id="bkImport" type="button">Import</button></span><input id="bkFile" type="file" accept="application/json" hidden></div>
+          <div class="setting-row" id="installRow" hidden><span><strong>Install AXO</strong><small>Add it to your home screen as an app.</small></span><button class="pill-button go" id="installBtn" type="button">Install</button></div>
           <div class="setting-row"><span><strong>Clear all chat history</strong><small>Remove conversations saved in this browser.</small></span><button class="danger-button" id="clearAllHistory" type="button">Clear history</button></div>
           <div class="setting-row"><span><strong>Forget my name</strong><small>You'll be asked again next time.</small></span><button class="danger-button" id="forgetName" type="button">Forget</button></div>
           <p class="settings-footnote">Chat history and preferences are stored in this browser on this device. Connection keys are stored in browser storage when you choose to save them; browser storage is not encrypted. The music/video library is stored by the AXO backend and may reset when a temporary hosting disk is redeployed.</p>
