@@ -21,7 +21,7 @@ from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, Response, send_from_directory
 
 import agent
 import apps_catalog
@@ -1294,7 +1294,8 @@ def text_to_speech():
 
         async def synthesize():
             allowed = {"en-GB-RyanNeural", "en-GB-SoniaNeural", "en-IN-PrabhatNeural",
-                       "en-IN-NeerjaNeural", "en-US-GuyNeural", "en-US-JennyNeural"}
+                       "en-IN-NeerjaNeural", "en-US-GuyNeural", "en-US-JennyNeural",
+                       "hi-IN-MadhurNeural", "hi-IN-SwaraNeural", "ur-PK-AsadNeural", "ur-PK-UzmaNeural", "ur-IN-GulNeural", "ur-IN-SalmanNeural"}
             voice = str(payload.get("voice") or "en-GB-RyanNeural")
             voice = voice if voice in allowed else "en-GB-RyanNeural"
             try:
@@ -1339,6 +1340,18 @@ def library():
         return jsonify({"ok": False, "error": "Link must start with http:// or https://"}), 400
     save_library_item(kind, name, url[:600])
     return jsonify({"ok": True, **load_library()})
+
+
+@app.get("/sw.js")
+def service_worker():
+    resp = send_from_directory(str(BASE_DIR / "static"), "sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"; resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(str(BASE_DIR / "static"), "manifest.webmanifest", mimetype="application/manifest+json")
 
 
 @app.get("/api/apps")
@@ -1388,10 +1401,19 @@ def chat_route():
     integ = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
     prefs = payload.get("prefs") if isinstance(payload.get("prefs"), dict) else {}
 
+    if re.fullmatch(r"(my |the )?(daily |morning |day )?(briefing|brief|summary of my day)|catch me up|brief me", re.sub(r"[!?.,]", "", message.lower()).strip()):
+        try:
+            txt, charts = agent.build_briefing(integ, prefs, {"now": india_now, "weather": get_weather, "load_notes": load_notes})
+            res = make_result(txt, intent="briefing"); res["charts"] = charts
+            return jsonify({"ok": True, **res})
+        except Exception as exc:
+            return jsonify({"ok": True, **make_result(f"Couldn't build the briefing: {exc}", intent="error")})
+
     # Deterministic requests (weather, maps, images, media, apps, notes, maths,
     # public data) should never fail just because an optional LLM is unavailable.
     try:
-        local = process_local_command(message, prefs)
+        skip_local = bool(str(ai.get("key") or "").strip()) and bool(re.match(r"^(please\s+)?(remember|schedule|every\s+(day|morning))\b", message.lower()))
+        local = None if skip_local else process_local_command(message, prefs)
         if local is not None:
             return jsonify({"ok": True, **local})
     except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as exc:
@@ -1414,6 +1436,7 @@ def chat_route():
             result["confirms"] = out.get("confirms", [])
             result["reminders"] = out.get("reminders", [])
             result["charts"] = out.get("charts", [])
+            result["memory_add"] = out.get("memory_add", []); result["schedules"] = out.get("schedules", [])
             for k in ("images", "map"):
                 if out.get(k): result[k] = out[k]
             if out.get("cards"): result["cards"] = (result.get("cards") or []) + out["cards"]
@@ -1488,7 +1511,8 @@ def bot_chat_route():
         acts = out.get("actions") or []
         result = make_result(reply, acts[0] if acts else None, news=out.get("news"), source="bot", intent="bot")
         result.update({"actions": acts, "confirms": out.get("confirms", []), "reminders": out.get("reminders", []),
-                       "charts": out.get("charts", []), "trace": out.get("trace", [])})
+                       "charts": out.get("charts", []), "trace": out.get("trace", []),
+                       "memory_add": out.get("memory_add", []), "schedules": out.get("schedules", [])})
         for k in ("images", "map"):
             if out.get(k): result[k] = out[k]
         return jsonify({"ok": True, **result})
