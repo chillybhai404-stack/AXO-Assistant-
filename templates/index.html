@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#212121" />
   <meta name="description" content="AXO — personal AI assistant." />
   <title>AXO</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -34,7 +35,7 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Conversation navigation">
       <div class="sidebar-brand">
-        <div class="brand-mark">A</div>
+        <div class="brand-mark"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"></div>
         <div class="brand-name">AXO</div>
         <button class="icon-button mobile-only" id="closeSidebar" type="button" aria-label="Close menu"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
@@ -50,7 +51,7 @@
         <button class="side-tool" data-panel="videos" type="button"><svg class="icon"><use href="#i-video"/></svg><span>Videos</span></button>
         <button class="side-tool" data-panel="notes" type="button"><svg class="icon"><use href="#i-note"/></svg><span>Notes</span></button>
         <div class="sidebar-divider"></div>
-        <button class="settings-button" id="openSettings" type="button"><span class="settings-avatar">A</span><span class="settings-account"><strong>AXO Assistant</strong><small id="connectionText">Connecting…</small></span><svg class="icon settings-gear"><use href="#i-settings"/></svg></button>
+        <button class="settings-button" id="openSettings" type="button"><span class="settings-avatar"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"></span><span class="settings-account"><strong id="accountName">AXO Assistant</strong><small id="connectionText">Connecting…</small></span><svg class="icon settings-gear"><use href="#i-settings"/></svg></button>
       </div>
     </aside>
     <div class="sidebar-scrim" id="sidebarScrim"></div>
@@ -73,7 +74,7 @@
           <div class="chat-screen">
             <div class="chat-scroll-area" id="chatScrollArea">
               <div class="welcome-screen" id="welcomeScreen">
-                <h1>What can I help with?</h1>
+                <h1 id="welcomeTitle">What can I help with?</h1>
                 <p>Ask anything, find information, or explore an idea.</p>
                 <div class="suggestions" id="suggestions">
                   <button type="button" data-prompt="What's the weather in Srinagar?"><svg class="icon"><use href="#i-globe"/></svg>Weather</button>
@@ -107,25 +108,76 @@
           <div class="api-toolbar"><input id="apiSearch" type="search" placeholder="Search providers or capabilities…"><span id="apiCount">Loading catalogue</span></div>
           <div class="api-grid" id="apiGrid"><div class="empty-state">Loading API catalogue…</div></div>
         </section>
-        <section class="panel secondary-panel" id="panel-music"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Music</h1><p>Saved music shortcuts.</p></div></div><div class="library-grid" id="musicGrid"></div></section>
-        <section class="panel secondary-panel" id="panel-videos"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Videos</h1><p>Saved video shortcuts.</p></div></div><div class="library-grid" id="videosGrid"></div></section>
+        <section class="panel secondary-panel" id="panel-music"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Music</h1><p>Saved music shortcuts.</p></div></div><form class="note-form lib-form" data-type="music"><input class="lib-name" maxlength="60" placeholder="Name (e.g. skyfall)" required><input class="lib-url" type="url" placeholder="Paste song link (https://…)" required><button type="submit">Add <span>＋</span></button></form><div class="library-grid" id="musicGrid"></div></section>
+        <section class="panel secondary-panel" id="panel-videos"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Videos</h1><p>Saved video shortcuts.</p></div></div><form class="note-form lib-form" data-type="videos"><input class="lib-name" maxlength="60" placeholder="Name (e.g. skyfall)" required><input class="lib-url" type="url" placeholder="Paste video link (https://…)" required><button type="submit">Add <span>＋</span></button></form><div class="library-grid" id="videosGrid"></div></section>
         <section class="panel secondary-panel" id="panel-notes"><div class="section-heading"><div><span class="section-eyebrow">LOCAL MEMORY</span><h1>Notes</h1><p>Notes stored locally beside the Python backend.</p></div></div><form class="note-form" id="noteForm"><input id="noteInput" maxlength="500" placeholder="Write a note to save…"><button type="submit">Save note <span>＋</span></button></form><div class="notes-list" id="notesList"></div><button class="text-button" id="clearNotes" type="button">Clear all notes</button></section>
       </div>
     </main>
   </div>
 
-  <div class="settings-backdrop" id="settingsModal" aria-hidden="true">
-    <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-      <header class="settings-header"><div><h2 id="settingsTitle">Settings</h2><p>Preferences for this browser.</p></div><button class="icon-button" id="closeSettings" type="button" aria-label="Close settings"><svg class="icon"><use href="#i-x"/></svg></button></header>
-      <div class="settings-section"><h3>Appearance</h3><label class="setting-row"><span><strong>Theme</strong><small>Choose how AXO looks.</small></span><select id="themeSetting"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label></div>
-      <div class="settings-section"><h3>Conversation</h3>
-        <label class="setting-row"><span><strong>Enter to send</strong><small>Use Shift + Enter for a new line.</small></span><input id="enterSendSetting" type="checkbox" class="toggle-input"></label>
-        <label class="setting-row"><span><strong>Voice responses</strong><small>Read AXO's replies aloud.</small></span><input id="voiceReplySetting" type="checkbox" class="toggle-input"></label>
-        <label class="setting-row"><span><strong>Voice input language</strong><small>Language used by microphone input.</small></span><select id="voiceLanguageSetting"><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="en-US">English (US)</option><option value="hi-IN">Hindi</option></select></label>
-      </div>
-      <div class="settings-section danger-zone"><h3>Data controls</h3><div class="setting-row"><span><strong>Clear all chat history</strong><small>Remove conversations saved in this browser.</small></span><button class="danger-button" id="clearAllHistory" type="button">Clear history</button></div></div>
-      <p class="settings-footnote">Your chat history and preferences stay in this browser's local storage. They are not synced to other devices.</p>
-    </section>
+  <div class="settings-page" id="settingsModal" aria-hidden="true">
+    <header class="sp-top"><button class="icon-button" id="closeSettings" type="button" aria-label="Back"><svg class="icon"><use href="#i-chevron" style="transform:rotate(90deg);transform-origin:center"/></svg></button><h2>Settings</h2><button class="text-button" id="resetSettings" type="button">Reset</button></header>
+    <div class="sp-body">
+      <nav class="sp-nav" id="spNav">
+        <button class="active" data-sec="profile" type="button">Profile</button>
+        <button data-sec="appearance" type="button">Appearance</button>
+        <button data-sec="voice" type="button">Voice</button>
+        <button data-sec="chat" type="button">Chat & media</button>
+        <button data-sec="library" type="button">Library</button>
+        <button data-sec="data" type="button">Data</button>
+        <button data-sec="about" type="button">About</button>
+      </nav>
+      <main class="sp-content">
+        <section class="sp-sec active" id="sec-profile"><h3>Profile & greeting</h3>
+          <label class="setting-row"><span><strong>Your name</strong><small>AXO greets you with this.</small></span><input id="nameSetting" maxlength="30" placeholder="Your name"></label>
+          <label class="setting-row"><span><strong>Call me</strong><small>How AXO addresses you.</small></span><select id="addressSetting"><option value="name">My name</option><option value="Sir">Sir</option><option value="Madam">Madam</option><option value="Boss">Boss</option><option value="namesir">Name + Sir</option><option value="custom">Custom…</option></select></label>
+          <label class="setting-row" id="customAddressRow"><span><strong>Custom title</strong><small>Anything you like.</small></span><input id="customAddressSetting" maxlength="30" placeholder="e.g. Commander"></label>
+          <label class="setting-row"><span><strong>Show greeting</strong><small>“Good morning, …” on the home screen.</small></span><input id="greetShowSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO (needs one tap on some browsers).</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
+          <div class="setting-row"><span><strong>Preview greeting</strong><small id="greetPreview"></small></span><button class="pill-button" id="greetTest" type="button">Play</button></div>
+        </section>
+        <section class="sp-sec" id="sec-appearance"><h3>Appearance</h3>
+          <label class="setting-row"><span><strong>Theme</strong><small>Choose how AXO looks.</small></span><select id="themeSetting"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+          <div class="setting-row"><span><strong>Accent colour</strong><small>Toggles, links and highlights.</small></span><div class="swatches" id="accentSwatches"></div></div>
+          <label class="setting-row"><span><strong>Text size</strong><small>Scales the whole interface.</small></span><select id="fontSizeSetting"><option value="90">Small</option><option value="100">Normal</option><option value="112">Large</option><option value="125">Extra large</option></select></label>
+        </section>
+        <section class="sp-sec" id="sec-voice"><h3>Voice</h3>
+          <label class="setting-row"><span><strong>Voice replies</strong><small>Read AXO's replies aloud.</small></span><input id="voiceReplySetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>AXO voice</strong><small>Neural voice used for speech.</small></span><select id="voiceNameSetting"><option value="en-GB-RyanNeural">Ryan (UK, male)</option><option value="en-GB-SoniaNeural">Sonia (UK, female)</option><option value="en-IN-PrabhatNeural">Prabhat (India, male)</option><option value="en-IN-NeerjaNeural">Neerja (India, female)</option><option value="en-US-GuyNeural">Guy (US, male)</option><option value="en-US-JennyNeural">Jenny (US, female)</option></select></label>
+          <label class="setting-row"><span><strong>Speech speed</strong><small id="rateLabel">Normal</small></span><input id="voiceRateSetting" type="range" min="-30" max="30" step="5"></label>
+          <label class="setting-row"><span><strong>Voice input language</strong><small>Language used by microphone input.</small></span><select id="voiceLanguageSetting"><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="en-US">English (US)</option><option value="hi-IN">Hindi</option></select></label>
+        </section>
+        <section class="sp-sec" id="sec-chat"><h3>Chat & media</h3>
+          <label class="setting-row"><span><strong>Enter to send</strong><small>Use Shift + Enter for a new line.</small></span><input id="enterSendSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Auto-open media</strong><small>“Play skyfall” opens the player right away.</small></span><input id="autoOpenSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Default music app</strong><small>Used for songs not in your library.</small></span><select id="platformSetting"><option value="youtube">YouTube</option><option value="youtube music">YouTube Music</option><option value="spotify">Spotify</option><option value="jiosaavn">JioSaavn</option><option value="gaana">Gaana</option><option value="soundcloud">SoundCloud</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option></select></label>
+          <p class="settings-footnote">Tip: say “play believer on spotify” or “watch cats on facebook” to pick an app per command.</p>
+        </section>
+        <section class="sp-sec" id="sec-library"><h3>Library</h3>
+          <div class="setting-row"><span><strong>Music links</strong><small id="musicCount">Add songs with a name and link.</small></span><button class="pill-button" data-go="music" type="button">Manage</button></div>
+          <div class="setting-row"><span><strong>Video links</strong><small id="videoCount">Add videos with a name and link.</small></span><button class="pill-button" data-go="videos" type="button">Manage</button></div>
+        </section>
+        <section class="sp-sec danger-zone" id="sec-data"><h3>Data controls</h3>
+          <div class="setting-row"><span><strong>Clear all chat history</strong><small>Remove conversations saved in this browser.</small></span><button class="danger-button" id="clearAllHistory" type="button">Clear history</button></div>
+          <div class="setting-row"><span><strong>Forget my name</strong><small>You'll be asked again next time.</small></span><button class="danger-button" id="forgetName" type="button">Forget</button></div>
+          <p class="settings-footnote">Chats and preferences stay in this browser. Your music/video library is stored beside the Python backend.</p>
+        </section>
+        <section class="sp-sec" id="sec-about"><h3>About</h3>
+          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant</strong><small>Personal AI assistant · AXU</small></div></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="onboard" id="onboard" aria-hidden="true">
+    <div class="onboard-card">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="AXO" class="onboard-logo">
+      <h1>Welcome to AXO</h1>
+      <p>What should I call you?</p>
+      <input id="onboardName" maxlength="30" placeholder="Your name" autocomplete="given-name">
+      <div class="onboard-title" id="onboardTitle"><button type="button" data-v="name" class="on">My name</button><button type="button" data-v="Sir">Sir</button><button type="button" data-v="Madam">Madam</button><button type="button" data-v="Boss">Boss</button></div>
+      <button class="onboard-go" id="onboardGo" type="button">Continue</button>
+    </div>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
