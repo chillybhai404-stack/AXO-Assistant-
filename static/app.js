@@ -353,7 +353,7 @@ async function sendMessage(rawText) {
     assistantHandle.bubble.textContent = reply;
     assistantHandle.bubble.classList.remove('thinking');
     const extras = {};
-    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'source', 'intent'].forEach(key => {
+    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'charts', 'trace', 'source', 'intent'].forEach(key => {
       if (data[key] !== undefined) extras[key] = (key === 'images' ? data[key].slice(0, 12) : key === 'news' ? data[key].slice(0, 10) : data[key]);
     });
     chat.messages.push({ role: 'assistant', content: reply, extras, createdAt: Date.now() });
@@ -437,7 +437,8 @@ function contactsMap() {
   return out;
 }
 function integrationsPayload() {
-  return { gmail: settings.gmail || {}, github: settings.github || {}, firebase: settings.firebase || {}, telegram: settings.telegram || {}, contacts: contactsMap() };
+  return { gmail: settings.gmail || {}, github: settings.github || {}, firebase: settings.firebase || {}, telegram: settings.telegram || {}, contacts: contactsMap(),
+    calendar: settings.calendar || {}, sheets: settings.sheets || {}, wabiz: settings.wabiz || {} };
 }
 const SAFE_SCHEME = /^(intent|tel|sms|mailto|geo|https?|whatsapp|tg|vnd\.youtube|fb|instagram|twitter|spotify|googlegmail|comgooglemaps|nflx|snapchat|linkedin|reddit|snssdk1233|clock-alarm|calshow|photos-redirect|music|github|googlechrome|App-Prefs):/i;
 function appTarget(a) {
@@ -789,7 +790,7 @@ $$('.side-tool').forEach(button => button.addEventListener('click', () => showPa
 $$('.suggestions button').forEach(button => button.addEventListener('click', () => sendMessage(button.dataset.prompt)));
 $('#newChat').addEventListener('click', () => newChat());
 $('#clearChat').addEventListener('click', () => newChat());
-$('#homeButton').addEventListener('click', () => showPanel('chat'));
+$('#homeButton').addEventListener('click', () => { if (typeof openVoiceMode === 'function') openVoiceMode(); else showPanel('chat'); });
 $('#mobileMenu').addEventListener('click', () => {
   $('#sidebar').classList.toggle('open');
   $('#sidebarScrim').classList.toggle('visible', $('#sidebar').classList.contains('open'));
@@ -1219,22 +1220,10 @@ function playWelcomeChime() {
     return true;
   } catch { return false; }
 }
-// Speaks with the neural voice chosen in Settings → Voice (Ryan, Sonia, …).
-// Returns 'ok' | 'blocked' (browser needs a tap first) | 'fail'.
-async function neuralSay(text) {
-  try {
-    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: settings.voiceName, rate: Number(settings.voiceRate) || 0 }) });
-    if (!r.ok) throw new Error('tts');
-    const url = URL.createObjectURL(await r.blob());
-    if (axuAudio) axuAudio.pause();
-    axuAudio = new Audio(url); axuAudio.onended = () => URL.revokeObjectURL(url);
-    try { await axuAudio.play(); return 'ok'; } catch { return 'blocked'; }
-  } catch { fallbackSpeak(text); return 'fail'; }
-}
 function playGreeting() {
+  const text = `${greetingText()}. How can I help?`;
   playWelcomeChime();
-  if (settings.greetSpeak) neuralSay(`${greetingText()}. How can I help?`);
+  if (settings.greetSpeak) fallbackSpeak(text);
 }
 function finishOnboarding() {
   const name = $('#onboardName').value.trim();
@@ -1244,25 +1233,34 @@ function finishOnboarding() {
   const box = $('#onboard'); box.classList.remove('open'); box.setAttribute('aria-hidden', 'true');
   playGreeting(); // this happens in the user's Continue tap, so audio is permitted
 }
-$('#onboardGo')?.addEventListener('click', finishOnboarding);
-$('#onboardName')?.addEventListener('keydown', e => { if (e.key === 'Enter') finishOnboarding(); });
+$('#onboardGo')?.addEventListener('click', () => (typeof onboardNext === 'function' ? onboardNext() : finishOnboarding()));
+$('#onboardName')?.addEventListener('keydown', e => { if (e.key === 'Enter') (typeof onboardNext === 'function' ? onboardNext() : finishOnboarding()); });
 $('#greetTest')?.addEventListener('click', playGreeting);
 let greetingPlayedThisView = false;
 function startGreeting() {
   if (!settings.name || greetingPlayedThisView) return;
   greetingPlayedThisView = true;
-  if (!(settings.greetChime || settings.greetSpeak)) return;
-  (async () => {
-    const chimed = playWelcomeChime();
-    const res = settings.greetSpeak ? await neuralSay(`${greetingText()}. How can I help?`) : 'ok';
-    if (res === 'blocked' || (!chimed && settings.greetChime)) {
-      // Browsers block sound on page load: play on the first tap instead.
-      const unlock = () => { playWelcomeChime(); if (res === 'blocked' && settings.greetSpeak) neuralSay(`${greetingText()}. How can I help?`); };
+  if (settings.greetChime || settings.greetSpeak) {
+    // Browsers may block sound on page load. Try once, then unlock on the
+    // first deliberate tap/key without repeatedly greeting during navigation.
+    let unlocked = playWelcomeChime();
+    if (settings.greetSpeak && 'speechSynthesis' in window) {
+      fallbackSpeak(`${greetingText()}. How can I help?`);
+    }
+    let pending = !unlocked || (settings.greetSpeak && !window.speechSynthesis?.speaking);
+    if (pending) {
+      const unlock = () => {
+        if (!pending) return;
+        pending = false;
+        playWelcomeChime();
+        if (settings.greetSpeak) fallbackSpeak(`${greetingText()}. How can I help?`);
+      };
       ['pointerdown', 'keydown', 'touchstart'].forEach(type => document.addEventListener(type, unlock, { once: true }));
     }
-  })();
+  }
 }
 
 readSavedData();
 loadStatus();
-if (!settings.name && !settings.onboarded) openOnboarding(); else startGreeting();
+window.__axuBoot = () => { if (!settings.name && !settings.onboarded) openOnboarding(); else startGreeting(); };
+if (!document.querySelector('script[src*="extra.js"]')) window.__axuBoot();

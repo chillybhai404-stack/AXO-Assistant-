@@ -162,7 +162,7 @@ function renderStrip() {
 }
 function fillForm(newBot) {
   const b = newBot ? { id: '', name: '', role: '', color: PALETTE[bots.length % 8], reportsTo: '', tools: [], link: '' } : botById(selBot); if (!b) return;
-  $('#bfName').value = b.name; $('#bfRole').value = b.role; $('#bfColor').value = b.color; $('#bfLink').value = b.link || '';
+  $('#bfName').value = b.name; $('#bfRole').value = b.role; $('#bfColor').value = b.color; $('#bfLink').value = b.link || ''; $('#bfKnow').value = b.knowledge || '';
   const sel = $('#bfBoss'); sel.innerHTML = '<option value="">Nobody (top level)</option>' + bots.filter(x => x.id !== b.id).map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''); sel.value = b.reportsTo || '';
   formTools = new Set(b.tools || []); const box = $('#bfTools'); box.innerHTML = '';
   const all = document.createElement('button'); all.type = 'button'; all.textContent = 'Everything'; all.className = formTools.size ? '' : 'on'; all.onclick = () => { formTools.clear(); fillToolsUI(); }; box.append(all);
@@ -173,7 +173,7 @@ function fillToolsUI() { const kids = $$('#bfTools button'); kids[0].classList.t
 $('#bfColor')?.addEventListener('input', e => rebuildStudioBot(e.target.value));
 $('#botForm')?.addEventListener('submit', e => {
   e.preventDefault();
-  const data = { name: $('#bfName').value.trim().slice(0, 24), role: $('#bfRole').value.trim(), color: $('#bfColor').value, reportsTo: $('#bfBoss').value, tools: [...formTools], link: $('#bfLink').value.trim() };
+  const data = { name: $('#bfName').value.trim().slice(0, 24), role: $('#bfRole').value.trim(), color: $('#bfColor').value, reportsTo: $('#bfBoss').value, tools: [...formTools], link: $('#bfLink').value.trim(), knowledge: $('#bfKnow').value.slice(0, 4000) };
   if (!data.name) return;
   if ($('#botForm').dataset.new) { const id = 'b' + Date.now().toString(36); bots.push({ id, ...data }); selBot = id; }
   else Object.assign(botById(selBot), data);
@@ -220,14 +220,15 @@ $('#botChatForm')?.addEventListener('submit', async e => {
   const hist = botChats[bot.id] = botChats[bot.id] || [];
   if (!hist.length) $('#botMsgs').innerHTML = '';
   addBotBubble('u', message); hist.push({ role: 'user', content: message });
-  const wait = addBotBubble('b', 'Working…'); botTalking = true;
+  const wait = addBotBubble('b', 'Working…'); botTalking = true; nodeActive[bot.id] = Date.now() + 90000;
   try {
     const res = await fetch('/api/bot-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       message, bot, bots, history: hist.slice(-7, -1).map(m => ({ role: m.role, content: m.content })),
       prefs: { platform: settings.platform, contacts: contactsMap() },
       ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: true, address: addressName() }, integrations: integrationsPayload() }) });
     const d = await res.json(); if (!res.ok || !d.ok) throw new Error(d.error || 'Failed');
-    wait.remove();
+    wait.remove(); nodeActive[bot.id] = Date.now() + 8000;
+    (d.trace || []).forEach(t => { const tb = bots.find(x => x.name === t.bot); if (tb) nodeActive[tb.id] = Date.now() + 8000; });
     (d.trace || []).forEach(t => addBotBubble('trace', `↳ ${t.bot}: ${t.task}`));
     const extras = {}; ['action', 'actions', 'confirms', 'images', 'map', 'cards', 'charts', 'news', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
     addBotBubble('b', d.reply || 'Done.', extras); hist.push({ role: 'assistant', content: d.reply || 'Done.', extras });
@@ -238,7 +239,7 @@ $('#botChatForm')?.addEventListener('submit', async e => {
 });
 
 /* ================= Node ================= */
-let node = null, nodeGroup = null, nodeSel = null, nodeBots = {};
+let nodeActive = {}; let node = null, nodeGroup = null, nodeSel = null, nodeBots = {};
 async function openNode() {
   loadBots(); const stage = $('#nodeStage');
   try {
@@ -259,7 +260,7 @@ async function openNode() {
         if (moved < 6 && down) pickNode(e);
       });
       el.addEventListener('wheel', e => { e.preventDefault(); node.camera.position.z = Math.min(26, Math.max(4, node.camera.position.z + e.deltaY * .01)); }, { passive: false });
-      node.tick = t => { if (!nodeGroup) return; nodeGroup.rotation.y += (rotY - nodeGroup.rotation.y) * .1; nodeGroup.rotation.x += (rotX - nodeGroup.rotation.x) * .1; Object.entries(nodeBots).forEach(([id, g]) => { g.userData.baseY = g.userData.y0; animBot(g, t, id === nodeSel); g.scale.setScalar(id === nodeSel ? 1.12 : 1); }); };
+      node.tick = t => { if (!nodeGroup) return; nodeGroup.rotation.y += (rotY - nodeGroup.rotation.y) * .1; nodeGroup.rotation.x += (rotX - nodeGroup.rotation.x) * .1; Object.entries(nodeBots).forEach(([id, g]) => { g.userData.baseY = g.userData.y0; animBot(g, t, id === nodeSel || (nodeActive[id] || 0) > Date.now()); g.scale.setScalar(id === nodeSel ? 1.12 : 1); }); };
     }
     buildNode();
   } catch (e) { stage.innerHTML = `<span class="stage-note">${esc(e.message)}</span>`; }
@@ -404,7 +405,7 @@ function vmDraw(ts) {
 }
 
 /* ================= Onboarding ================= */
-const VOICES = [['en-GB-RyanNeural', 'Ryan', 'UK · male'], ['en-GB-SoniaNeural', 'Sonia', 'UK · female'], ['en-IN-PrabhatNeural', 'Prabhat', 'India · male'], ['en-IN-NeerjaNeural', 'Neerja', 'India · female'], ['en-US-GuyNeural', 'Guy', 'US · male'], ['en-US-JennyNeural', 'Jenny', 'US · female']];
+const VOICES = [['en-GB-RyanNeural', 'Ryan', 'UK · male'], ['en-GB-SoniaNeural', 'Sonia', 'UK · female'], ['en-IN-PrabhatNeural', 'Prabhat', 'India · male'], ['en-IN-NeerjaNeural', 'Neerja', 'India · female'], ['en-US-GuyNeural', 'Guy', 'US · male'], ['en-US-JennyNeural', 'Jenny', 'US · female'], ['hi-IN-MadhurNeural', 'Madhur', 'Hindi · male'], ['hi-IN-SwaraNeural', 'Swara', 'Hindi · female'], ['ur-PK-AsadNeural', 'Asad', 'Urdu · male'], ['ur-PK-UzmaNeural', 'Uzma', 'Urdu · female']];
 const INTERESTS = [['music', 'Music & videos'], ['mail', 'Email'], ['code', 'Coding & GitHub'], ['biz', 'Business data'], ['social', 'Social apps'], ['calls', 'Calls & messages'], ['study', 'Study & research'], ['bots', 'Bots & automation']];
 const CONNECTS = {
   mail: { t: 'Email', d: 'Read and write mail', sec: 'integrations' }, code: { t: 'GitHub', d: 'Repos, issues, notifications', sec: 'integrations' },
@@ -477,17 +478,165 @@ startGreeting = function () {
 function renderConnectStrip() {
   const scr = $('#welcomeScreen'); if (!scr) return; let strip = $('#connectStrip');
   if (!strip) { strip = document.createElement('div'); strip.id = 'connectStrip'; strip.className = 'connect-strip'; scr.append(strip); }
-  strip.innerHTML = ''; const items = [];
+  strip.innerHTML = ''; const items = [['☀️ Daily briefing', '__brief']];
+  if (window.__installEvt) items.push(['📲 Install app', '__install']);
   if (!(settings.ai || {}).key) items.push(['✨ Add AI key — unlock the agent', 'ai']);
   const want = new Set(settings.interests || []);
   if (want.has('mail') && !(settings.gmail || {}).email) items.push(['✉️ Connect email', 'integrations']);
   if (want.has('code') && !(settings.github || {}).token) items.push(['🐙 Connect GitHub', 'integrations']);
   if (want.has('biz') && !(settings.firebase || {}).service_account) items.push(['🔥 Connect Firebase', 'integrations']);
   if (want.has('calls') && !settings.contactsText) items.push(['📞 Add contacts', 'contacts']);
-  items.slice(0, 3).forEach(([label, sec]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { openSettings(); showSettingsSection(sec); }; strip.append(b); });
+  items.slice(0, 4).forEach(([label, sec]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { if (sec === '__brief') sendMessage('daily briefing'); else if (sec === '__install') installApp(); else { openSettings(); showSettingsSection(sec); } }; strip.append(b); });
 }
 const _rw = renderWelcome; renderWelcome = function () { _rw(); renderConnectStrip(); };
 
 /* ================= boot ================= */
+
+/* ================= v12: memory, schedules, wake word, backup, install ================= */
+const _fetch0 = window.fetch.bind(window);
+window.fetch = async function (input, init) {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  const isChat = /\/api\/(chat|bot-chat)$/.test(url);
+  if (isChat && init && typeof init.body === 'string') {
+    try { const b = JSON.parse(init.body); b.ai = { ...(b.ai || {}), memory: (settings.memory || []).slice(-15), city: settings.city || '' }; b.prefs = { ...(b.prefs || {}), city: settings.city || '' }; init = { ...init, body: JSON.stringify(b) }; } catch { /* ignore */ }
+  }
+  const r = await _fetch0(input, init);
+  if (isChat) r.clone().json().then(d => { (d.memory_add || []).forEach(addMemory); (d.schedules || []).forEach(s => addSchedule(s.time, s.prompt, s.repeat)); }).catch(() => {});
+  return r;
+};
+function addMemory(fact) {
+  fact = String(fact || '').trim().slice(0, 160); if (!fact) return;
+  settings.memory = settings.memory || []; if (settings.memory.some(m => m.toLowerCase() === fact.toLowerCase())) return;
+  settings.memory.push(fact); settings.memory = settings.memory.slice(-40); saveSettings(); renderMemory(); toast('Remembered.');
+}
+function renderMemory() {
+  const box = $('#memList'); if (!box) return; box.innerHTML = '';
+  if (!(settings.memory || []).length) box.innerHTML = '<div class="empty-state">Nothing yet.</div>';
+  (settings.memory || []).forEach((m, i) => {
+    const row = document.createElement('div'); row.className = 'setting-row'; row.innerHTML = `<span><strong style="font-weight:500">${esc(m)}</strong></span>`;
+    const x = document.createElement('button'); x.className = 'pill-button'; x.type = 'button'; x.textContent = 'Forget'; x.onclick = () => { settings.memory.splice(i, 1); saveSettings(); renderMemory(); }; row.append(x); box.append(row);
+  });
+}
+$('#memForm')?.addEventListener('submit', ev => { ev.preventDefault(); addMemory($('#memInput').value); $('#memInput').value = ''; });
+
+function addSchedule(time, prompt, repeat) {
+  if (!/^\d\d:\d\d$/.test(time || '') || !prompt) return;
+  settings.schedules = settings.schedules || []; settings.schedules.push({ id: 's' + Date.now().toString(36), time, prompt: String(prompt).slice(0, 200), repeat: repeat === 'once' ? 'once' : 'daily', last: '' });
+  saveSettings(); renderSchedules(); toast(`Scheduled for ${time}.`);
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* ignore */ }
+}
+function renderSchedules() {
+  const box = $('#schList'); if (!box) return; box.innerHTML = '';
+  if (!(settings.schedules || []).length) box.innerHTML = '<div class="empty-state">No schedules yet.</div>';
+  (settings.schedules || []).forEach((s, i) => {
+    const row = document.createElement('div'); row.className = 'setting-row'; row.innerHTML = `<span><strong>${esc(s.time)} · ${s.repeat === 'once' ? 'once' : 'daily'}</strong><small>${esc(s.prompt)}</small></span>`;
+    const x = document.createElement('button'); x.className = 'pill-button'; x.type = 'button'; x.textContent = 'Remove'; x.onclick = () => { settings.schedules.splice(i, 1); saveSettings(); renderSchedules(); }; row.append(x); box.append(row);
+  });
+}
+$('#schForm')?.addEventListener('submit', ev => { ev.preventDefault(); addSchedule($('#schTime').value, $('#schPrompt').value.trim(), 'daily'); });
+let schBusy = false;
+async function runSchedule(s) {
+  try {
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      message: s.prompt, history: [], prefs: { platform: settings.platform, contacts: contactsMap() },
+      ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() }) });
+    const d = await res.json(); if (!d.ok) return;
+    try {
+      const chat = currentChat(); addMessage('user', `⏰ ${s.prompt}`); chat.messages.push({ role: 'user', content: `⏰ ${s.prompt}`, createdAt: Date.now() });
+      const h = addMessage('assistant', d.reply || 'Done.'); const extras = {};
+      ['action', 'actions', 'confirms', 'news', 'images', 'map', 'cards', 'charts', 'source', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
+      renderIntelligence(extras, h.richHost); chat.messages.push({ role: 'assistant', content: d.reply || 'Done.', extras, createdAt: Date.now() }); chat.updatedAt = Date.now(); persistConversations();
+    } catch { /* ignore */ }
+    toast(`⏰ ${(d.reply || '').slice(0, 80)}`);
+    try { if ('Notification' in window && Notification.permission === 'granted') new Notification('AXO', { body: (d.reply || '').slice(0, 140), icon: LOGO_URL }); } catch { /* ignore */ }
+    if (settings.voiceReplies || settings.greetSpeak) neuralSay(String(d.reply || '').replace(/https?:\/\/\S+/g, 'link').slice(0, 500));
+  } catch { /* ignore */ }
+}
+function tickSchedules() {
+  if (schBusy || !(settings.schedules || []).length) return;
+  const n = new Date(), today = n.toDateString(), hm = String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0');
+  const due = settings.schedules.find(s => s.time <= hm && s.last !== today); if (!due) return;
+  schBusy = true; due.last = today;
+  if (due.repeat === 'once') settings.schedules = settings.schedules.filter(s => s !== due);
+  saveSettings(); renderSchedules(); runSchedule(due).finally(() => { schBusy = false; });
+}
+setInterval(tickSchedules, 20000); setTimeout(tickSchedules, 4000);
+
+/* settings fields for the new options */
+function bindField(id, get, set, check) {
+  const el = $(id); if (!el) return null;
+  el.addEventListener(check ? 'change' : 'input', () => { set(check ? el.checked : el.value.trim()); saveSettings(); });
+  return () => { if (document.activeElement !== el) { if (check) el.checked = !!get(); else el.value = get() || ''; } };
+}
+const syncs = [
+  bindField('#citySetting', () => settings.city, v => { settings.city = v; }),
+  bindField('#wakeWordSetting', () => settings.wakeWord, v => { settings.wakeWord = v; }, true),
+  bindField('#calIcs', () => (settings.calendar || {}).ics, v => { settings.calendar = { ...(settings.calendar || {}), ics: v }; }),
+  bindField('#sheetHook', () => (settings.sheets || {}).webhook, v => { settings.sheets = { ...(settings.sheets || {}), webhook: v }; }),
+  bindField('#waToken', () => (settings.wabiz || {}).token, v => { settings.wabiz = { ...(settings.wabiz || {}), token: v }; }),
+  bindField('#waPhone', () => (settings.wabiz || {}).phone, v => { settings.wabiz = { ...(settings.wabiz || {}), phone: v }; }),
+].filter(Boolean);
+const _as = applySettings; applySettings = function () { _as(); syncs.forEach(f => f()); renderMemory(); renderSchedules(); };
+
+/* wake word: "Hey AXO" */
+let wakeRec = null;
+function startWake() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR || wakeRec) return;
+  const r = new SR(); wakeRec = r; r.continuous = true; r.interimResults = true; r.lang = 'en-IN';
+  r.onresult = ev => { const t = Array.from(ev.results).slice(-2).map(x => x[0].transcript).join(' ').toLowerCase(); if (/\b(hey|hay|hi|ok|okay)[ ,]+(axo|ax o|aexo|exo|acho|axle|aks)\b/.test(t)) { stopWake(); openVoiceMode(); } };
+  r.onend = () => { if (wakeRec === r) wakeRec = null; };
+  r.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { settings.wakeWord = false; saveSettings(); applySettings(); toast('Allow the microphone to use the wake word.'); } };
+  try { r.start(); } catch { wakeRec = null; }
+}
+function stopWake() { const r = wakeRec; wakeRec = null; try { r?.abort(); } catch { /* ignore */ } }
+setInterval(() => { if (settings.wakeWord && !VM.open && !document.hidden) startWake(); else if (wakeRec) stopWake(); }, 3000);
+
+/* backup */
+const SECRETS = [['ai', 'key'], ['gmail', 'password'], ['github', 'token'], ['firebase', 'service_account'], ['telegram', 'token'], ['wabiz', 'token'], ['sheets', 'webhook']];
+$('#bkExport')?.addEventListener('click', () => {
+  const s = JSON.parse(JSON.stringify(settings)); SECRETS.forEach(([g, k]) => { if (s[g]) s[g][k] = ''; });
+  const blob = new Blob([JSON.stringify({ axo: 1, settings: s, bots: JSON.parse(localStorage.getItem(BOT_KEY) || 'null') }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'axo-backup.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('Backup saved (keys left out).');
+});
+$('#bkImport')?.addEventListener('click', () => $('#bkFile').click());
+$('#bkFile')?.addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  try {
+    const b = JSON.parse(await f.text()); if (b.axo !== 1 || typeof b.settings !== 'object') throw new Error('Not an AXO backup.');
+    const keep = SECRETS.map(([g, k]) => [g, k, (settings[g] || {})[k] || '']);
+    settings = { ...settings, ...b.settings }; keep.forEach(([g, k, v]) => { settings[g] = { ...(settings[g] || {}), [k]: v || (settings[g] || {})[k] || '' }; });
+    saveSettings(); if (Array.isArray(b.bots) && b.bots.length) localStorage.setItem(BOT_KEY, JSON.stringify(b.bots));
+    applySettings(); toast('Backup restored. Re-enter any API keys.');
+  } catch (err) { toast(err.message || 'Could not read that file.'); }
+});
+
+/* install as app */
+window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); window.__installEvt = ev; const r = $('#installRow'); if (r) r.hidden = false; renderConnectStrip(); });
+window.addEventListener('appinstalled', () => { window.__installEvt = null; const r = $('#installRow'); if (r) r.hidden = true; renderConnectStrip(); });
+async function installApp() { const ev = window.__installEvt; if (!ev) { toast('Use your browser menu → “Add to Home screen”.'); return; } ev.prompt(); try { await ev.userChoice; } catch { /* ignore */ } window.__installEvt = null; renderConnectStrip(); }
+$('#installBtn')?.addEventListener('click', installApp);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+/* bots: knowledge files, export / import team */
+$('#bfFile')?.addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const text = (await f.text()).slice(0, 3000); const box = $('#bfKnow');
+  box.value = (box.value + `\n[${f.name}]\n${text}`).trim().slice(0, 4000); toast('Added to knowledge. Tap Save bot.');
+});
+$('#botExport')?.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ axoBots: 1, bots }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'axo-bot-team.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
+$('#botImport')?.addEventListener('click', () => $('#botImportFile').click());
+$('#botImportFile')?.addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text()); if (!Array.isArray(d.bots) || !d.bots.length) throw new Error('Not a bot team file.');
+    bots = d.bots.slice(0, 20).map(b => ({ id: String(b.id || 'b' + Math.random().toString(36).slice(2, 7)), name: String(b.name || 'Bot').slice(0, 24), color: /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#4f9dff', role: String(b.role || '').slice(0, 500), reportsTo: String(b.reportsTo || ''), tools: Array.isArray(b.tools) ? b.tools.filter(t => BOT_TOOLS.includes(t)) : [], link: String(b.link || '').slice(0, 300), knowledge: String(b.knowledge || '').slice(0, 4000) }));
+    selBot = bots[0].id; saveBots(); renderStrip(); fillForm(); rebuildStudioBot(); renderSheet(); renderBotMsgs(); toast('Team imported.');
+  } catch (err) { toast(err.message); }
+});
+
+/* boot */
 renderWelcome();
 window.__axuBoot && window.__axuBoot();
