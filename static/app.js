@@ -4,17 +4,15 @@ const chatWindow = $('#chatWindow');
 const messageInput = $('#messageInput');
 const chatForm = $('#chatForm');
 const sendButton = $('#sendButton');
-const chatHistory = [];
+const CHAT_STORAGE_KEY = 'axo_conversations_v1';
+const SETTINGS_STORAGE_KEY = 'axo_preferences_v1';
+let conversations = [];
+let activeConversation = null;
 let busy = false;
 let activeMaps = [];
 let apiCatalog = [];
-let apiFilter = 'all';
-let currentMode = localStorage.getItem('axo-mode') === 'node' ? 'node' : 'chat';
-let nodeMicStream = null;
-let nodeAudioContext = null;
-let nodeAnalyser = null;
-let nodeLevel = 0;
-let activeRecognition = null;
+let settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN' };
+let voiceRecognition = null;
 
 function toast(message) {
   const node = $('#toast');
@@ -25,75 +23,189 @@ function toast(message) {
 }
 
 function setCoreState(state, label) {
-  const stage = $('#hologramStage');
-  if (!stage) return;
-  stage.dataset.state = state;
-  const labels = {
-    idle: 'SYSTEM STANDING BY',
-    listening: 'VOICE INPUT ACTIVE',
-    thinking: 'PROCESSING REQUEST',
-    speaking: 'RESPONSE TRANSMITTING'
-  };
-  $('#orbStatus').textContent = label || labels[state] || 'SYSTEM STANDING BY';
+  const mode = $('#modeHint');
+  if (mode) {
+    const labels = { idle: 'Chats are saved on this device', listening: 'Listening…', thinking: 'Thinking…', speaking: 'Speaking…' };
+    mode.textContent = label || labels[state] || labels.idle;
+  }
 }
 
-function renderAssistantText(node, value) {
-  const escaped = escapeHtml(String(value ?? ''));
-  const html = escaped
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|\n)\s*[-•]\s+/g, '$1<span class="chat-bullet">•</span> ')
-    .replace(/\n/g, '<br>');
-  node.innerHTML = html;
+function makeId() {
+  return (window.crypto?.randomUUID?.() || `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+}
+function currentChat() {
+  if (!activeConversation) activeConversation = { id: makeId(), title: 'New chat', createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+  return activeConversation;
+}
+function persistConversations() {
+  const chat = activeConversation;
+  if (chat && chat.messages.length > 100) chat.messages = chat.messages.slice(-100);
+  if (chat && chat.messages.length && !conversations.some(item => item.id === chat.id)) conversations.push(chat);
+  if (chat && conversations.some(item => item.id === chat.id)) {
+    const index = conversations.findIndex(item => item.id === chat.id);
+    conversations[index] = chat;
+  }
+  conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  conversations = conversations.slice(0, 40);
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(conversations));
+  } catch (error) {
+    conversations = conversations.slice(0, 20);
+    try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(conversations)); }
+    catch { toast('Browser storage is full. Remove a few older chats to save more.'); }
+  }
+  renderChatHistory($('#historySearch')?.value || '');
+}
+function readSavedData() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || '[]');
+    conversations = Array.isArray(saved) ? saved.filter(item => item && typeof item.id === 'string' && Array.isArray(item.messages)) : [];
+  } catch { conversations = []; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
+    settings = { ...settings, ...(stored && typeof stored === 'object' ? stored : {}) };
+  } catch { /* keep defaults */ }
+  applySettings();
+  renderChatHistory();
+  if (conversations.length) loadConversation(conversations[0].id);
+  else newChat(false);
+}
+function titleFromMessage(message) {
+  const compact = String(message || '').replace(/\s+/g, ' ').trim();
+  return compact.length > 38 ? `${compact.slice(0, 38).trim()}…` : (compact || 'New chat');
+}
+function renderChatHistory(query = '') {
+  const host = $('#chatHistoryList');
+  if (!host) return;
+  const search = query.trim().toLowerCase();
+  host.innerHTML = '';
+  const matches = [...conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).filter(item => {
+    if (!search) return true;
+    return (item.title || '').toLowerCase().includes(search) || item.messages.some(message => String(message.content || '').toLowerCase().includes(search));
+  });
+  if (!matches.length) {
+    host.innerHTML = `<div class="history-empty">${search ? 'No matching conversations.' : 'Your saved chats will appear here.'}</div>`;
+    return;
+  }
+  matches.forEach(item => {
+    const row = document.createElement('div');
+    row.className = `history-item${activeConversation?.id === item.id ? ' active' : ''}`;
+    const select = document.createElement('button');
+    select.type = 'button';
+    select.className = 'history-item-title';
+    select.textContent = item.title || 'New chat';
+    select.title = item.title || 'New chat';
+    select.addEventListener('click', () => loadConversation(item.id));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'history-delete';
+    remove.title = 'Delete conversation';
+    remove.setAttribute('aria-label', `Delete ${item.title || 'conversation'}`);
+    remove.innerHTML = '<svg class="icon"><use href="#i-trash"/></svg>';
+    remove.addEventListener('click', event => { event.stopPropagation(); deleteConversation(item.id); });
+    row.append(select, remove);
+    host.append(row);
+  });
+}
+function clearActiveMaps() {
+  activeMaps.forEach(map => { try { map.remove(); } catch {} });
+  activeMaps = [];
+}
+function newChat(closeMenu = true) {
+  clearActiveMaps();
+  activeConversation = { id: makeId(), title: 'New chat', createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+  chatWindow.innerHTML = '';
+  $('#welcomeScreen')?.classList.remove('hidden');
+  showPanel('chat');
+  if (closeMenu) closeSidebar();
+  messageInput.value = '';
+  messageInput.style.height = 'auto';
+  setCoreState('idle');
+  renderChatHistory($('#historySearch')?.value || '');
+  messageInput.focus();
+}
+function loadConversation(id) {
+  const found = conversations.find(item => item.id === id);
+  if (!found) return;
+  clearActiveMaps();
+  activeConversation = found;
+  chatWindow.innerHTML = '';
+  $('#welcomeScreen')?.classList.toggle('hidden', found.messages.length > 0);
+  found.messages.forEach(message => {
+    const handle = addMessage(message.role, message.content || '', message.extras || null);
+    if (message.role === 'assistant' && message.extras) renderIntelligence(message.extras, handle.richHost);
+  });
+  renderChatHistory($('#historySearch')?.value || '');
+  showPanel('chat');
+  closeSidebar();
+}
+function deleteConversation(id) {
+  conversations = conversations.filter(item => item.id !== id);
+  if (activeConversation?.id === id) {
+    activeConversation = null;
+    clearActiveMaps();
+    if (conversations.length) loadConversation(conversations[0].id);
+    else newChat();
+  }
+  try { localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(conversations)); } catch { /* ignore */ }
+  renderChatHistory($('#historySearch')?.value || '');
+  toast('Conversation deleted.');
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings)); }
+  catch { toast('Could not save preferences in this browser.'); }
+}
+function applySettings() {
+  let theme = settings.theme || 'dark';
+  if (theme === 'system') theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  const themeInput = $('#themeSetting');
+  const enterInput = $('#enterSendSetting');
+  const voiceInput = $('#voiceReplySetting');
+  const langInput = $('#voiceLanguageSetting');
+  if (themeInput) themeInput.value = settings.theme || 'dark';
+  if (enterInput) enterInput.checked = settings.enterToSend !== false;
+  if (voiceInput) voiceInput.checked = !!settings.voiceReplies;
+  if (langInput) langInput.value = settings.voiceLanguage || 'en-IN';
+  if (voiceRecognition) voiceRecognition.lang = settings.voiceLanguage || 'en-IN';
+}
+function openSettings() {
+  const modal = $('#settingsModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  applySettings();
+}
+function closeSettings() {
+  const modal = $('#settingsModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+function closeSidebar() {
+  $('#sidebar')?.classList.remove('open');
+  $('#sidebarScrim')?.classList.remove('visible');
 }
 
-function addMessage(role, text, extras = {}) {
+function addMessage(role, text, extras = null) {
   const wrap = document.createElement('div');
   wrap.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`;
-  const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = role === 'user' ? 'U' : 'A';
-  const content = document.createElement('div'); content.className = 'message-content';
-  const meta = document.createElement('div'); meta.className = 'message-meta'; meta.textContent = role === 'user' ? 'YOU' : 'AXO';
-  const bubble = document.createElement('div'); bubble.className = 'bubble';
-  if (role === 'assistant') renderAssistantText(bubble, text); else bubble.textContent = text;
-  content.append(meta, bubble); wrap.append(avatar, content); chatWindow.append(wrap);
-  if (role === 'assistant' && extras && (extras.map || extras.images || extras.cards || extras.news || extras.action)) {
-    const attachments = document.createElement('div'); attachments.className = 'message-attachments';
-    content.append(attachments); renderIntelligence(extras, attachments);
-  }
-  const scroller = $('#chatScrollArea'); if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  return wrap;
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'user' ? 'U' : 'A';
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text || '';
+  content.append(bubble);
+  const richHost = document.createElement('div');
+  richHost.className = 'chat-rich-content';
+  if (role === 'assistant') content.append(richHost);
+  wrap.append(avatar, content);
+  chatWindow.append(wrap);
+  $('#welcomeScreen')?.classList.add('hidden');
+  wrap.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  return { wrap, bubble, richHost };
 }
-
-function updateAssistantMessage(wrap, text, extras = {}) {
-  if (!wrap) return addMessage('assistant', text, extras);
-  wrap.classList.remove('thinking-message');
-  const bubble = wrap.querySelector('.bubble');
-  if (bubble) renderAssistantText(bubble, text);
-  const oldAttachments = wrap.querySelector('.message-attachments');
-  if (oldAttachments) oldAttachments.remove();
-  if (extras && (extras.map || extras.images || extras.cards || extras.news || extras.action)) {
-    const content = wrap.querySelector('.message-content');
-    const attachments = document.createElement('div'); attachments.className = 'message-attachments';
-    content.append(attachments); renderIntelligence(extras, attachments);
-  }
-  const scroller = $('#chatScrollArea'); if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  return wrap;
-}
-
-function addThinkingMessage() {
-  const wrap = addMessage('assistant', 'Checking connected sources…');
-  wrap.classList.add('thinking-message');
-  const bubble = wrap.querySelector('.bubble');
-  if (bubble) {
-    bubble.textContent = '';
-    const label = document.createElement('span'); label.className = 'thinking-label'; label.textContent = 'Thinking';
-    const dots = document.createElement('span'); dots.className = 'thinking-dots'; dots.setAttribute('aria-label', 'Processing');
-    for (let i = 0; i < 3; i++) dots.append(document.createElement('i'));
-    bubble.append(label, dots);
-  }
-  return wrap;
-}
-
 
 let axuAudio = null;
 async function speak(text) {
@@ -103,9 +215,7 @@ async function speak(text) {
     if (axuAudio) { axuAudio.pause(); axuAudio = null; }
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     const response = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: spoken })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: spoken })
     });
     if (!response.ok) throw new Error('Neural voice unavailable');
     const audioBlob = await response.blob();
@@ -115,23 +225,20 @@ async function speak(text) {
     axuAudio.onended = () => { setCoreState('idle'); URL.revokeObjectURL(audioUrl); axuAudio = null; };
     axuAudio.onerror = () => { URL.revokeObjectURL(audioUrl); axuAudio = null; fallbackSpeak(spoken); };
     await axuAudio.play();
-  } catch (_) {
-    fallbackSpeak(spoken);
-  }
+  } catch (_) { fallbackSpeak(spoken); }
 }
-
 function fallbackSpeak(text) {
   if (!('speechSynthesis' in window)) { setCoreState('idle'); return; }
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-GB';
+  utterance.lang = (settings.voiceLanguage || 'en-IN');
   utterance.rate = 0.94;
   utterance.pitch = 0.88;
   const chooseVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    const britishMale = voices.find(v => /^en-GB/i.test(v.lang) && /male|daniel|george|ryan|arthur/i.test(v.name));
+    const preferred = voices.find(v => v.lang.toLowerCase() === utterance.lang.toLowerCase());
     const british = voices.find(v => /^en-GB/i.test(v.lang));
-    if (britishMale || british) utterance.voice = britishMale || british;
+    if (preferred || british) utterance.voice = preferred || british;
     utterance.onstart = () => setCoreState('speaking');
     utterance.onend = () => setCoreState('idle');
     utterance.onerror = () => setCoreState('idle');
@@ -140,24 +247,23 @@ function fallbackSpeak(text) {
   chooseVoice();
 }
 
-
-async function sendMessage(rawText, options = {}) {
+async function sendMessage(rawText) {
   const message = (rawText || '').trim();
   if (!message || busy) return;
-  const voiceOnly = options.voiceOnly === true || currentMode === 'node';
-  const shouldSpeak = voiceOnly || options.voice === true;
   busy = true;
-  if (sendButton) sendButton.disabled = true;
-  let assistantPlaceholder = null;
-  if (!voiceOnly) {
-    addMessage('user', message);
-    assistantPlaceholder = addThinkingMessage();
-  }
-  const contextHistory = chatHistory.slice(-8);
-  if (messageInput) { messageInput.value = ''; messageInput.style.height = 'auto'; }
+  sendButton.disabled = true;
+  messageInput.value = '';
+  messageInput.style.height = 'auto';
+  const chat = currentChat();
+  addMessage('user', message);
+  chat.messages.push({ role: 'user', content: message, createdAt: Date.now() });
+  if (chat.messages.filter(item => item.role === 'user').length === 1) chat.title = titleFromMessage(message);
+  chat.updatedAt = Date.now();
+  persistConversations();
+  const contextHistory = chat.messages.slice(0, -1).filter(item => ['user', 'assistant'].includes(item.role)).slice(-8).map(item => ({ role: item.role, content: item.content }));
+  const assistantHandle = addMessage('assistant', 'Thinking…');
+  assistantHandle.bubble.classList.add('thinking');
   setCoreState('thinking');
-  setNodeState('thinking', 'PROCESSING COMMAND', 'Checking connected sources…');
-  if ($('#modeHint')) $('#modeHint').textContent = 'ROUTING REQUEST';
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -166,29 +272,35 @@ async function sendMessage(rawText, options = {}) {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || 'The request failed.');
     const reply = data.reply || 'Done.';
-    if (!voiceOnly) updateAssistantMessage(assistantPlaceholder, reply, data);
-    chatHistory.push({ role: 'user', content: message }, { role: 'assistant', content: reply });
-    if ($('#modeHint')) $('#modeHint').textContent = data.source === 'api' ? 'AI PROVIDER' : 'PUBLIC DATA / LOCAL CORE';
-    setNodeState('speaking', 'SPEAKING RESPONSE', 'AXU Voice is delivering the result.');
-    if (shouldSpeak) await speak(reply);
+    assistantHandle.bubble.textContent = reply;
+    assistantHandle.bubble.classList.remove('thinking');
+    const extras = {};
+    ['action', 'news', 'images', 'map', 'cards', 'source', 'intent'].forEach(key => {
+      if (data[key] !== undefined) extras[key] = (key === 'images' ? data[key].slice(0, 12) : key === 'news' ? data[key].slice(0, 10) : data[key]);
+    });
+    chat.messages.push({ role: 'assistant', content: reply, extras, createdAt: Date.now() });
+    chat.updatedAt = Date.now();
+    persistConversations();
+    renderIntelligence(extras, assistantHandle.richHost);
+    if (data.action?.url) toast('Link ready.');
+    if (settings.voiceReplies) speak(reply);
     else setCoreState('idle');
+    setCoreState('idle');
   } catch (error) {
-    const failure = `I couldn't complete that request. ${error.message}`;
-    if (!voiceOnly) updateAssistantMessage(assistantPlaceholder, failure);
-    toast(voiceOnly ? 'The request could not be completed.' : error.message);
-    setNodeState('idle', 'REQUEST FAILED', 'Try speaking again.');
-    if (voiceOnly) await speak('I could not complete that request. Please try again.');
-    else setCoreState('idle');
+    const failedReply = `I couldn't complete that request. ${error.message}`;
+    assistantHandle.bubble.textContent = failedReply;
+    assistantHandle.bubble.classList.remove('thinking');
+    chat.messages.push({ role: 'assistant', content: failedReply, createdAt: Date.now() });
+    chat.updatedAt = Date.now();
+    persistConversations();
+    setCoreState('idle');
   } finally {
     busy = false;
-    if (sendButton) sendButton.disabled = false;
-    if (!voiceOnly && messageInput) messageInput.focus();
-    if (!busy && currentMode === 'node') setNodeState('idle', 'AXO is listening.', 'Tap the microphone and speak naturally.');
+    sendButton.disabled = false;
+    messageInput.focus();
+    messageInput.style.height = 'auto';
   }
 }
-
-function showIntelLoading() { /* Chat responses now render inline. */ }
-function renderIntelError(message) { toast(message || 'Request failed.'); }
 
 function resultBlock(label, meta = '') {
   const block = document.createElement('section');
@@ -261,80 +373,19 @@ function itemList(parent, items, formatter) {
 }
 function renderIntelligence(data, host) {
   if (!host) return;
+  host.innerHTML = '';
   let blocks = 0;
-
-  if (data.map) {
-    renderMapBlock(data.map, host);
-    blocks++;
-  }
-  if (Array.isArray(data.images) && data.images.length) {
-    renderImageBlock(data.images, host);
-    blocks++;
-  }
-  (data.cards || []).forEach(card => {
-    renderDataCard(card, host);
-    blocks++;
-  });
-  if (Array.isArray(data.news) && data.news.length) {
-    renderNewsBlock(data.news, host);
-    blocks++;
-  }
+  if (data.map) { renderMapBlock(data.map, host); blocks++; }
+  if (Array.isArray(data.images) && data.images.length) { renderImageBlock(data.images, host); blocks++; }
+  (data.cards || []).forEach(card => { renderDataCard(card, host); blocks++; });
+  if (Array.isArray(data.news) && data.news.length) { renderNewsBlock(data.news, host); blocks++; }
   if (data.action?.url && !blocks) {
-    const block = resultBlock('ACTION READY', data.intent || 'LOCAL COMMAND');
+    const block = resultBlock('LINK', data.intent || 'ACTION');
     const body = document.createElement('div'); body.className = 'result-body';
-    addText(body, 'This command is ready to open in a new tab.', 'result-text');
+    addText(body, 'Open this link:', 'result-text');
     addLink(body, data.action.url, data.action.label || 'OPEN');
     block.append(body); host.append(block); blocks++;
   }
-  // The assistant's reply already appears in the message bubble; avoid duplicating it in a card.
-
-  if (blocks) renderSourceBadges(data, host);
-}
-
-function renderSourceBadges(data, host) {
-  const sources = new Map();
-  const knownDomains = {
-    'Open-Meteo':'open-meteo.com','Wikipedia':'wikipedia.org','Openverse':'openverse.org',
-    'Wikimedia Commons':'commons.wikimedia.org','NASA':'nasa.gov','Nominatim':'openstreetmap.org',
-    'OpenStreetMap':'openstreetmap.org','Esri World Imagery':'esri.com','Frankfurter':'frankfurter.dev',
-    'Where the ISS at':'wheretheiss.at','REST Countries':'restcountries.com','USGS':'usgs.gov',
-    'NASA EONET':'nasa.gov','GBIF':'gbif.org','Open Library':'openlibrary.org',
-    'Gutendex':'gutendex.com','TheMealDB':'themealdb.com','GitHub':'github.com',
-    'Free Dictionary API':'dictionaryapi.dev','World Bank':'worldbank.org','NewsAPI':'newsapi.org',
-    'Google News RSS':'news.google.com'
-  };
-  const add = (name, url) => {
-    const label = String(name || 'Source').trim();
-    if (!label) return;
-    let domain = knownDomains[label] || '';
-    try { if (url) domain = new URL(url).hostname.replace(/^www\./, '') || domain; } catch (_) {}
-    if (!sources.has(label)) sources.set(label, domain);
-  };
-  if (data.map) { add('OpenStreetMap'); add('Esri World Imagery'); }
-  (data.images || []).forEach(item => add(item.source || 'Image source', item.url));
-  (data.news || []).forEach(item => add(item.source || 'News', item.url));
-  const names = { weather:'Open-Meteo', wiki:'Wikipedia', currency:'Frankfurter', iss:'Where the ISS at', country:'REST Countries', earthquakes:'USGS', natural_events:'NASA EONET', species:'GBIF', books:'Open Library', recipes:'TheMealDB', github:'GitHub', dictionary:'Free Dictionary API', world_bank:'World Bank' };
-  (data.cards || []).forEach(card => { if (names[card.type]) add(names[card.type]); });
-  if (data.provider) add(data.provider);
-  if (data.intent === 'news' && !data.provider) add('News feed');
-  if (!sources.size && data.source === 'api') add('Connected AI provider');
-  if (!sources.size) return;
-  const row = document.createElement('div'); row.className = 'source-badges';
-  const label = document.createElement('span'); label.className = 'source-label'; label.textContent = 'SOURCES'; row.append(label);
-  [...sources.entries()].slice(0, 7).forEach(([name, domain]) => {
-    const chip = document.createElement('span'); chip.className = 'source-chip';
-    if (domain) {
-      const logo = document.createElement('img'); logo.className = 'source-logo';
-      logo.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
-      logo.alt = ''; logo.loading = 'lazy'; logo.referrerPolicy = 'no-referrer';
-      logo.onerror = () => { const fallback=document.createElement('span'); fallback.className='source-fallback'; fallback.textContent=name.slice(0,1).toUpperCase(); logo.replaceWith(fallback); }; chip.append(logo);
-    } else {
-      const fallback = document.createElement('span'); fallback.className = 'source-fallback';
-      fallback.textContent = name.slice(0, 1).toUpperCase(); chip.append(fallback);
-    }
-    const text = document.createElement('span'); text.textContent = name; chip.append(text); row.append(chip);
-  });
-  host.append(row);
 }
 
 function renderImageBlock(images, host) {
@@ -366,7 +417,7 @@ function renderMapBlock(place, host) {
   const sat = document.createElement('button'); sat.type = 'button'; sat.className = 'active'; sat.textContent = 'SATELLITE';
   const street = document.createElement('button'); street.type = 'button'; street.textContent = 'STREET';
   toggles.append(sat, street); top.append(name, toggles);
-  const mapNode = document.createElement('div'); mapNode.className = 'map-view'; mapNode.id = `axo-map-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+  const mapNode = document.createElement('div'); mapNode.className = 'map-view'; mapNode.id = `jarvis-map-${Date.now()}-${Math.floor(Math.random()*10000)}`;
   const attribution = document.createElement('div'); attribution.className = 'map-attribution';
   attribution.innerHTML = 'Satellite imagery: Esri and contributors. Street map: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>. Imagery availability and zoom depend on provider coverage.';
   body.append(top, mapNode, attribution); block.append(body); host.append(block);
@@ -393,7 +444,7 @@ function renderMapBlock(place, host) {
     street.classList.add('active'); sat.classList.remove('active');
   });
   activeMaps.push(map);
-  setTimeout(() => map.invalidateSize(), 250);
+  setTimeout(() => map.invalidateSize(), 120);
 }
 function renderDataCard(card, host) {
   const types = {
@@ -534,46 +585,63 @@ function renderNewsBlock(articles, host) {
 chatForm.addEventListener('submit', event => { event.preventDefault(); sendMessage(messageInput.value); });
 messageInput.addEventListener('input', () => {
   messageInput.style.height = 'auto';
-  messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+  messageInput.style.height = Math.min(messageInput.scrollHeight, 180) + 'px';
 });
 messageInput.addEventListener('keydown', event => {
-  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); chatForm.requestSubmit(); }
+  if (event.key === 'Enter' && !event.shiftKey && settings.enterToSend !== false) {
+    event.preventDefault(); chatForm.requestSubmit();
+  }
 });
 
 function showPanel(name) {
   $$('.panel').forEach(panel => panel.classList.toggle('active', panel.id === `panel-${name}`));
-  $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.panel === name));
-  const labels = { chat: 'COMMAND CENTRE', news: 'WORLD INTELLIGENCE', apis: 'API ATLAS', music: 'MUSIC', videos: 'VIDEO ARCHIVE', notes: 'MEMORY NOTES' };
-  $('#currentSection').textContent = labels[name] || 'COMMAND CENTRE';
-  $('#sidebar').classList.remove('open');
+  $$('.side-tool').forEach(button => button.classList.toggle('active', button.dataset.panel === name));
+  $('#sidebar')?.classList.remove('open');
+  $('#sidebarScrim')?.classList.remove('visible');
   if (name === 'news') loadNews('general');
   if (name === 'apis') loadApis();
   if (name === 'music') loadLibrary('music');
   if (name === 'videos') loadLibrary('videos');
   if (name === 'notes') loadNotes();
 }
-$$('.nav-item').forEach(button => button.addEventListener('click', () => showPanel(button.dataset.panel)));
-$$('.profile-row, .side-action').forEach(button => button.addEventListener('click', () => { if (button.dataset.panel) showPanel(button.dataset.panel); }));
-window.showPanel = showPanel;
-$$('.quick-command').forEach(button => button.addEventListener('click', () => { showPanel('chat'); sendMessage(button.dataset.command); }));
+$$('.side-tool').forEach(button => button.addEventListener('click', () => showPanel(button.dataset.panel)));
 $$('.suggestions button').forEach(button => button.addEventListener('click', () => sendMessage(button.dataset.prompt)));
-$('#mobileMenu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
-$('#clearChat').addEventListener('click', () => {
-  activeMaps.forEach(map => { try { map.remove(); } catch {} }); activeMaps = [];
-  chatWindow.innerHTML = '';
-  chatHistory.length = 0;
-  addMessage('assistant', 'Conversation cleared. AXO is ready.');
-  setCoreState('idle');
+$('#newChat').addEventListener('click', () => newChat());
+$('#clearChat').addEventListener('click', () => newChat());
+$('#homeButton').addEventListener('click', () => showPanel('chat'));
+$('#mobileMenu').addEventListener('click', () => {
+  $('#sidebar').classList.toggle('open');
+  $('#sidebarScrim').classList.toggle('visible', $('#sidebar').classList.contains('open'));
+});
+$('#closeSidebar').addEventListener('click', closeSidebar);
+$('#sidebarScrim').addEventListener('click', closeSidebar);
+$('#historySearch').addEventListener('input', event => renderChatHistory(event.target.value));
+$('#openSettings').addEventListener('click', openSettings);
+$('#openSettingsTop').addEventListener('click', openSettings);
+$('#closeSettings').addEventListener('click', closeSettings);
+$('#settingsModal').addEventListener('click', event => { if (event.target.id === 'settingsModal') closeSettings(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeSettings(); closeSidebar(); } });
+$('#themeSetting').addEventListener('change', event => { settings.theme = event.target.value; applySettings(); saveSettings(); });
+$('#enterSendSetting').addEventListener('change', event => { settings.enterToSend = event.target.checked; saveSettings(); });
+$('#voiceReplySetting').addEventListener('change', event => { settings.voiceReplies = event.target.checked; saveSettings(); });
+$('#voiceLanguageSetting').addEventListener('change', event => { settings.voiceLanguage = event.target.value; applySettings(); saveSettings(); });
+$('#clearAllHistory').addEventListener('click', () => {
+  if (!confirm('Clear every conversation saved in this browser? This cannot be undone.')) return;
+  conversations = [];
+  activeConversation = null;
+  try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* ignore */ }
+  clearActiveMaps();
+  closeSettings();
+  newChat();
+  toast('Chat history cleared.');
 });
 
 async function loadStatus() {
   try {
     const response = await fetch('/api/status');
     const data = await response.json();
-    $('#connectionText').textContent = data.ok ? 'Local core connected' : 'Backend unavailable';
-    $('#apiStatus').textContent = data.ai_configured ? 'AI LINKED' : 'PUBLIC DATA';
-    $('#modeHint').textContent = data.ai_configured ? 'HYBRID INTELLIGENCE READY' : 'KEYLESS DATA READY';
-    $('#newsCount').textContent = data.news_configured ? 'NEWSAPI' : 'RSS';
+    $('#connectionText').textContent = data.ok ? 'Ready to chat' : 'Backend unavailable';
+    $('#apiStatus').textContent = data.ai_configured ? 'AI CONNECTED' : 'LOCAL CORE';
   } catch { $('#connectionText').textContent = 'Backend unavailable'; }
 }
 
@@ -605,14 +673,8 @@ async function loadNews(category) {
     const response = await fetch(`/api/news?category=${encodeURIComponent(category)}`);
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || 'News request failed.');
-    const providerLabel = $('#newsProvider'); if (providerLabel) { providerLabel.textContent = data.provider || 'NEWS FEED'; providerLabel.title = data.provider_status?.note || ''; }
-    const existingNotice = $('#newsProviderNotice'); if (existingNotice) existingNotice.textContent = data.provider_status?.note || '';
     renderNews(data.articles || []);
-  } catch (error) {
-    const notice=$('#newsProviderNotice'); if(notice) notice.textContent=error.message;
-    const provider=$('#newsProvider'); if(provider) provider.textContent='FEED ISSUE';
-    $('#newsGrid').innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
-  }
+  } catch (error) { $('#newsGrid').innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; }
 }
 
 function renderNews(articles) {
@@ -650,34 +712,28 @@ async function loadApis() {
     const data = await response.json();
     apiCatalog = data.items || [];
     renderApis(apiCatalog);
-    if (data.directory_url) $('#apiCount').title = `Source: ${data.source || 'local'} · Directory: ${data.directory_url}`;
   } catch { $('#apiGrid').innerHTML = '<div class="empty-state">Could not load the API catalogue.</div>'; }
 }
 function renderApis(items) {
   const grid = $('#apiGrid'); if (!grid) return;
   grid.innerHTML = '';
-  const isKeyless = item => item.keyless === true || ['no','none'].includes(String(item.auth || '').toLowerCase());
-  const filtered = items.filter(item => apiFilter === 'all' || (apiFilter === 'keyless' && isKeyless(item)) || (apiFilter === 'key' && !isKeyless(item)));
-  const keylessCount = items.filter(isKeyless).length;
-  $('#apiCount').textContent = `${filtered.length.toLocaleString()} shown · ${items.length.toLocaleString()} listed · ${keylessCount.toLocaleString()} no-key`;
-  if (!filtered.length) { grid.innerHTML = '<div class="empty-state">No matching APIs. Try another search or filter.</div>'; return; }
-  const fragment = document.createDocumentFragment();
-  filtered.forEach(item => {
+  $('#apiCount').textContent = `${items.length} endpoints / capabilities`;
+  if (!items.length) { grid.innerHTML = '<div class="empty-state">No matching sources.</div>'; return; }
+  items.forEach(item => {
     const card = document.createElement('article'); card.className = 'api-card';
-    addText(card, `${item.area || 'Public APIs'} · ${isKeyless(item) ? 'NO KEY' : `AUTH: ${item.auth || 'UNKNOWN'}`}`, 'api-tag');
-    const title = document.createElement('strong'); title.textContent = item.title || item.provider || 'API'; card.append(title);
-    addText(card, `${item.provider && item.provider !== item.title ? item.provider + ': ' : ''}${item.description || 'Public API listing'}`, '');
-    if (item.https) addText(card, `HTTPS: ${item.https} · CORS: ${item.cors || 'Unknown'}`, 'api-meta');
-    const link = document.createElement('a'); link.href = safeHttpUrl(item.docs) || '#'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'DOCUMENTATION ↗'; card.append(link);
-    fragment.append(card);
+    addText(card, `${item.area} · PUBLIC DATA`, 'api-tag');
+    const title = document.createElement('strong'); title.textContent = item.title; card.append(title);
+    addText(card, `${item.provider}: ${item.description}`, '');
+    const path = addText(card, item.path || '', 'api-path');
+    path.style.cssText = 'font:7px var(--mono);color:#687887;margin-top:6px;overflow-wrap:anywhere';
+    const link = document.createElement('a'); link.href = item.docs; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'DOCUMENTATION ↗'; card.append(link);
+    grid.append(card);
   });
-  grid.append(fragment);
 }
 $('#apiSearch')?.addEventListener('input', event => {
   const q = event.target.value.toLowerCase();
-  renderApis(apiCatalog.filter(x => [x.provider,x.title,x.area,x.description,x.path,x.auth].join(' ').toLowerCase().includes(q)));
+  renderApis(apiCatalog.filter(x => [x.provider,x.title,x.area,x.description,x.path].join(' ').toLowerCase().includes(q)));
 });
-$$('#apiFilters [data-api-filter]').forEach(button => button.addEventListener('click', () => { apiFilter = button.dataset.apiFilter; $$('#apiFilters .api-filter').forEach(x => x.classList.toggle('active', x === button)); const q = ($('#apiSearch')?.value || '').toLowerCase(); renderApis(apiCatalog.filter(x => [x.provider,x.title,x.area,x.description,x.path,x.auth].join(' ').toLowerCase().includes(q))); }));
 
 async function loadNotes() {
   try {
@@ -709,64 +765,52 @@ $('#clearNotes').addEventListener('click', async () => {
   } catch (error) { toast(error.message); }
 });
 
-// Two assistant modes: Chat shows transcripts/results; Node speaks only.
-function setNodeState(state, headline, subline) {
-  const stage=$('#nodeStage'); if(stage) stage.dataset.state=state||'idle';
-  const status=$('#nodeStatus'); if(status) status.textContent=({idle:'STANDING BY',listening:'LISTENING',thinking:'PROCESSING COMMAND',speaking:'SPEAKING'}[state]||'STANDING BY');
-  const title=$('#nodeHeadline'); if(title&&headline) title.textContent=headline;
-  const detail=$('#nodeSubline'); if(detail&&subline) detail.textContent=subline;
+// Browser speech recognition. Chrome on Android supports microphone input.
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceButton = $('#voiceButton');
+if (SpeechRecognition) {
+  voiceRecognition = new SpeechRecognition();
+  voiceRecognition.lang = settings.voiceLanguage || 'en-IN';
+  voiceRecognition.interimResults = true;
+  voiceRecognition.maxAlternatives = 1;
+  let finalTranscript = '';
+  let submittedTranscript = false;
+  let listening = false;
+  voiceButton.addEventListener('click', () => {
+    if (listening) { voiceRecognition.stop(); return; }
+    try {
+      finalTranscript = ''; submittedTranscript = false;
+      voiceRecognition.lang = settings.voiceLanguage || 'en-IN';
+      voiceRecognition.start();
+      listening = true;
+      voiceButton.classList.add('listening');
+      setCoreState('listening');
+    } catch { toast('Microphone is already active.'); }
+  });
+  voiceRecognition.onresult = event => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) finalTranscript += `${transcript} `;
+      else interim += transcript;
+    }
+    messageInput.value = (finalTranscript + interim).trim();
+    messageInput.style.height = 'auto';
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 180) + 'px';
+  };
+  voiceRecognition.onerror = event => { toast(`Microphone: ${event.error}`); setCoreState('idle'); };
+  voiceRecognition.onend = () => {
+    listening = false;
+    voiceButton.classList.remove('listening');
+    setCoreState('idle');
+    if (!submittedTranscript && finalTranscript.trim()) {
+      submittedTranscript = true;
+      sendMessage(finalTranscript.trim());
+    }
+  };
+} else {
+  voiceButton.addEventListener('click', () => toast('Voice input is not supported here. Try Chrome on Android.'));
 }
-function setMode(mode) {
-  currentMode=mode==='node'?'node':'chat'; localStorage.setItem('axo-mode',currentMode);
-  $('#chatModeView')?.classList.toggle('active',currentMode==='chat'); $('#nodeModeView')?.classList.toggle('active',currentMode==='node');
-  $('#nodeModeView')?.setAttribute('aria-hidden',currentMode!=='node');
-  $$('.mode-tab').forEach(button=>button.classList.toggle('active',button.dataset.mode===currentMode));
-  if($('#modeHint')) $('#modeHint').textContent=currentMode==='chat'?'CHAT · TEXT + VOICE':'NODE · VOICE ONLY';
-  if(currentMode==='node') { setNodeState('idle','AXO is listening.','Tap the microphone and speak naturally.'); requestAnimationFrame(() => window.dispatchEvent(new Event('resize'))); }
-}
-$$('.mode-tab').forEach(button=>button.addEventListener('click',()=>setMode(button.dataset.mode)));
-
-async function startNodeMeter() {
-  if(!navigator.mediaDevices?.getUserMedia) return false;
-  try {
-    nodeMicStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false;
-    nodeAudioContext=new AC(); if(nodeAudioContext.state==='suspended') await nodeAudioContext.resume(); const source=nodeAudioContext.createMediaStreamSource(nodeMicStream);
-    nodeAnalyser=nodeAudioContext.createAnalyser(); nodeAnalyser.fftSize=1024; nodeAnalyser.smoothingTimeConstant=.72; source.connect(nodeAnalyser); return true;
-  } catch(error) { console.debug('Mic level analyser unavailable:',error); return false; }
-}
-function stopNodeMeter() {
-  if(nodeMicStream) nodeMicStream.getTracks().forEach(track=>track.stop()); nodeMicStream=null; nodeAnalyser=null;
-  if(nodeAudioContext) nodeAudioContext.close().catch(()=>{}); nodeAudioContext=null; nodeLevel=0; updateNodeLevelUI(0);
-}
-function updateNodeLevelUI(level) {
-  const bar=$('#nodeLevelBar'); if(bar) bar.style.width=`${Math.max(0,Math.min(100,level*100))}%`;
-  const db=$('#nodeDb'); if(db) db.textContent=level>.001?`${Math.round(20*Math.log10(level))} dBFS`:'— dBFS';
-  if($('#nodeStage')) $('#nodeStage').style.setProperty('--voice-level',String(Math.min(1,level*4)));
-}
-function animateNodeCanvas() {
-  const canvas=$('#nodeCanvas'); if(!canvas) return; const ctx=canvas.getContext('2d'); if(!ctx) return;
-  let w=0,h=0,points=[];
-  const resize=()=>{const r=canvas.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);w=r.width;h=r.height;canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);points=Array.from({length:176},()=>{const a=Math.random()*Math.PI*2,r=55+Math.random()*118;return{a,r,base:r,speed:(Math.random()-.5)*.005,phase:Math.random()*6.28,size:.6+Math.random()*1.4};});};
-  const draw=()=>{if(!canvas.isConnected)return;if(nodeAnalyser){const arr=new Uint8Array(nodeAnalyser.fftSize);nodeAnalyser.getByteTimeDomainData(arr);let sum=0;for(const v of arr){const n=(v-128)/128;sum+=n*n;}nodeLevel=Math.sqrt(sum/arr.length);}else nodeLevel*=.90;updateNodeLevelUI(nodeLevel);ctx.clearRect(0,0,w,h);const cx=w/2,cy=h/2,e=Math.min(1,nodeLevel*5);
-    points.forEach(p=>{p.a+=p.speed*(1+e*24);const r=p.base+Math.sin(performance.now()*.0015+p.phase)*2+e*(9+12*Math.sin(p.phase));const x=cx+Math.cos(p.a)*r,y=cy+Math.sin(p.a)*r*.78;ctx.beginPath();ctx.arc(x,y,p.size+e*1.2,0,Math.PI*2);ctx.fillStyle=`rgba(167,190,255,${.28+Math.min(.65,e*.7)})`;ctx.fill();});
-    for(let i=0;i<points.length;i+=5){const p=points[i],x=cx+Math.cos(p.a)*p.base,y=cy+Math.sin(p.a)*p.base*.78;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.strokeStyle=`rgba(120,158,235,${.025+e*.09})`;ctx.lineWidth=.7;ctx.stroke();}requestAnimationFrame(draw);};resize();window.addEventListener('resize',resize);draw();
-}
-
-const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-async function startVoiceCommand(voiceOnly) {
-  if(!SpeechRecognition){toast('Voice input needs Chrome on Android.');return;}
-  if (activeRecognition) { toast('Voice input is already active.'); return; }
-  const recognition=new SpeechRecognition(); activeRecognition=recognition; recognition.lang='en-IN';recognition.interimResults=true;recognition.maxAlternatives=1;
-  let finalTranscript='';let submitted=false;const button=voiceOnly?$('#nodeVoiceButton'):$('#voiceButton');const original=button?.innerHTML;
-  if(button){button.classList.add('listening');if(voiceOnly)button.innerHTML='<span class="node-mic-icon">●</span><span>Listening…</span>'; }
-  setCoreState('listening');setNodeState('listening','I’m listening.','Speak clearly. The points react to your voice.');if(voiceOnly)await startNodeMeter();
-  recognition.onresult=event=>{let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const t=event.results[i][0].transcript;if(event.results[i].isFinal)finalTranscript+=t;else interim+=t;}const text=(finalTranscript||interim).trim();if(!voiceOnly&&messageInput){messageInput.value=text;messageInput.style.height='auto';messageInput.style.height=Math.min(messageInput.scrollHeight,100)+'px';}if(finalTranscript.trim()&&!submitted){submitted=true;if(!voiceOnly&&messageInput)messageInput.value='';recognition.stop();sendMessage(finalTranscript.trim(),{voice:true,voiceOnly});}};
-  recognition.onerror=event=>{activeRecognition=null;toast(`Voice input: ${event.error}`);setCoreState('idle');setNodeState('idle','AXO is ready.','Tap the microphone and try again.');stopNodeMeter();if(button){button.classList.remove('listening');button.innerHTML=original;}};
-  recognition.onend=()=>{activeRecognition=null;if(button){button.classList.remove('listening');button.innerHTML=original;}if(!busy){setCoreState('idle');setNodeState('idle','AXO is listening.','Tap the microphone and speak naturally.');}stopNodeMeter();if(!submitted&&finalTranscript.trim())sendMessage(finalTranscript.trim(),{voice:true,voiceOnly});};
-  try{recognition.start();}catch(error){activeRecognition=null;toast('Microphone is already active.');stopNodeMeter();}
-}
-$('#voiceButton')?.addEventListener('click',()=>startVoiceCommand(false));$('#nodeVoiceButton')?.addEventListener('click',()=>startVoiceCommand(true));
 
 function decodeEntities(value) {
   const node = document.createElement('textarea');
@@ -777,6 +821,5 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
 
+readSavedData();
 loadStatus();
-setMode(currentMode);
-animateNodeCanvas();
