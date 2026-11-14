@@ -1413,6 +1413,10 @@ def chat_route():
             result["actions"] = actions
             result["confirms"] = out.get("confirms", [])
             result["reminders"] = out.get("reminders", [])
+            result["charts"] = out.get("charts", [])
+            for k in ("images", "map"):
+                if out.get(k): result[k] = out[k]
+            if out.get("cards"): result["cards"] = (result.get("cards") or []) + out["cards"]
             return jsonify({"ok": True, **result})
         except Exception as exc:
             app.logger.warning("AXO agent request failed: %s", str(exc)[:240])
@@ -1461,6 +1465,36 @@ def chat_route():
         "I can run local commands and connected integrations. Add an AI provider key in Settings → AI & API for open-ended conversation.",
         intent="help",
     )})
+
+
+@app.post("/api/bot-chat")
+def bot_chat_route():
+    payload = request.get_json(silent=True) or {}
+    ai = payload.get("ai") if isinstance(payload.get("ai"), dict) else {}
+    integ = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    prefs = payload.get("prefs") if isinstance(payload.get("prefs"), dict) else {}
+    bot = payload.get("bot") if isinstance(payload.get("bot"), dict) else {}
+    bots = [b for b in (payload.get("bots") or []) if isinstance(b, dict)][:20]
+    message = str(payload.get("message", "")).strip()
+    if not message or not bot:
+        return jsonify({"ok": False, "error": "Missing message or bot."}), 400
+    if not str(ai.get("key") or "").strip():
+        return jsonify({"ok": True, **make_result("Bots need an AI key. Add one in Settings → AI & API.", intent="error")})
+    integ["contacts"] = prefs.get("contacts") or integ.get("contacts") or {}
+    helpers = {"now": india_now, "local": process_local_command, "load_notes": load_notes, "save_notes": save_notes,
+               "weather": get_weather, "news": fetch_news, "wiki": wikipedia_search, "platform_url": platform_url, "platforms": PLATFORMS}
+    try:
+        reply, out = agent.run_bot(bot, message, payload.get("history") or [], {**ai, "platform": prefs.get("platform", "youtube")}, integ, helpers, bots)
+        acts = out.get("actions") or []
+        result = make_result(reply, acts[0] if acts else None, news=out.get("news"), source="bot", intent="bot")
+        result.update({"actions": acts, "confirms": out.get("confirms", []), "reminders": out.get("reminders", []),
+                       "charts": out.get("charts", []), "trace": out.get("trace", [])})
+        for k in ("images", "map"):
+            if out.get(k): result[k] = out[k]
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        app.logger.warning("bot chat failed: %s", str(exc)[:200])
+        return jsonify({"ok": True, **make_result(f"{bot.get('name','Bot')} hit a problem: {str(exc)[:200]}", intent="error")})
 
 
 @app.post("/api/models")

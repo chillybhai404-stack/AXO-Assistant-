@@ -61,6 +61,11 @@ TOOLS = [
     {"name": "firebase_overview", "description": "Summarize what's in the user's Firebase Firestore database: collections, document counts, latest documents.", "parameters": {"type": "object", "properties": {}}},
     {"name": "firebase_read", "description": "Read recent documents from a Firestore collection.", "parameters": {"type": "object", "properties": {"collection": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["collection"]}},
     {"name": "telegram_send", "description": "Prepare a Telegram message via the user's bot. The user must tap Confirm.", "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
+    {"name": "show_chart", "description": "Show a chart to the user. Use whenever numbers/counts/trends are involved (Firebase data, comparisons, stats). type: bar, line or pie.", "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "type": {"type": "string", "enum": ["bar", "line", "pie"]}, "labels": {"type": "array", "items": {"type": "string"}}, "values": {"type": "array", "items": {"type": "number"}}}, "required": ["title", "labels", "values"]}},
+    {"name": "web_search", "description": "Search the internet. Returns titles, links and snippets.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "read_url", "description": "Read the text of a public web page.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
+    {"name": "lookup", "description": "Ask AXO's built-in data sources (no key needed): maps, images, earthquakes, ISS, currency, countries, books, recipes, dictionary, holidays, space news, species, world bank data, sun times, trivia, etc. Pass a plain-English request.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "delegate", "description": "(Manager bots only) Give a task to one of your team's bots by name and get their result.", "parameters": {"type": "object", "properties": {"bot": {"type": "string"}, "task": {"type": "string"}}, "required": ["bot", "task"]}},
     {"name": "facebook_instagram", "description": "Open Facebook or Instagram (their personal feeds/DMs cannot be read through any public API).", "parameters": {"type": "object", "properties": {"app": {"type": "string", "enum": ["facebook", "instagram"]}, "query": {"type": "string"}}, "required": ["app"]}},
 ]
 
@@ -117,22 +122,34 @@ def read_emails(cfg, count=3):
 
 
 def send_email(cfg, to, subject, body):
-    addr, pw = cfg.get("email", ""), cfg.get("password", "")
+    addr, pw = (cfg.get("email") or "").strip(), (cfg.get("password") or "").replace(" ", "")
     if not addr or not pw:
-        raise ValueError("Gmail isn't connected.")
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to or ""):
+        raise ValueError("Email isn't connected. Add your address and app password in Settings > Integrations.")
+    to = (to or "").strip()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to):
         raise ValueError("That recipient address doesn't look valid.")
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = addr, to, subject[:200]
-    msg.set_content(body)
+    msg["From"], msg["To"], msg["Subject"] = addr, to, (subject or "(no subject)")[:200]
+    msg.set_content(body or "")
     _, host, port = _hosts(addr)
-    pw = pw.replace(" ", "")
-    if port == 465:
-        with smtplib.SMTP_SSL(host, port, timeout=20) as s:
-            s.login(addr, pw); s.send_message(msg)
-    else:
-        with smtplib.SMTP(host, port, timeout=20) as s:
-            s.starttls(); s.login(addr, pw); s.send_message(msg)
+    attempts = [(465, True), (587, False)] if port == 465 else [(587, False), (465, True)]
+    last = None
+    for p, ssl_mode in attempts:
+        try:
+            if ssl_mode:
+                with smtplib.SMTP_SSL(host, p, timeout=15) as srv:
+                    srv.login(addr, pw); srv.send_message(msg)
+            else:
+                with smtplib.SMTP(host, p, timeout=15) as srv:
+                    srv.starttls(); srv.login(addr, pw); srv.send_message(msg)
+            return
+        except smtplib.SMTPAuthenticationError:
+            raise ValueError("The email provider rejected your login. Use an APP PASSWORD (not your normal password) and the full address.")
+        except smtplib.SMTPRecipientsRefused:
+            raise ValueError("The recipient address was refused.")
+        except (OSError, smtplib.SMTPException) as exc:
+            last = exc
+    raise ValueError("Couldn't reach the mail server (some hosts block SMTP ports). Tap 'Open in mail app' to send it from your own app instead. Details: " + str(last)[:80])
 
 
 # ----------------------------------------------------------------- github
@@ -433,16 +450,93 @@ def list_models(ai):
         raise ValueError(f"Could not fetch models: {exc.__class__.__name__}.") from exc
     return DEFAULT_MODELS.get(provider, [])
 
-def run_agent(message, history, ai, integ, H):
+TOOL_GROUPS = {
+    "mail": ("mail", "email", "inbox", "gmail", "send"), "github": ("github", "repo", "issue", "commit", "pull"),
+    "firebase": ("firebase", "firestore", "database", "my app", "users", "orders", "collection", "data"),
+    "chart": ("chart", "graph", "plot", "compare", "trend", "stats", "statistics", "firebase", "firestore", "count"),
+    "web": ("search", "internet", "web", "latest", "news about", "find out", "research", "who is", "what is", "price", "http"),
+    "phone": ("call", "dial", "sms", "text ", "whatsapp", "message"), "telegram": ("telegram",),
+    "media": ("play", "watch", "song", "music", "video", "listen"),
+    "notes": ("note", "remind", "remember", "reminder", "timer"),
+    "weather": ("weather", "temperature", "rain", "forecast", "news", "headlines"),
+    "apps": ("open", "launch", "start", "app", "facebook", "instagram"),
+    "lookup": ("map", "image", "picture", "quake", "iss", "currency", "convert", "country", "book", "recipe", "meaning", "holiday", "space", "species", "sunrise", "trivia", "wiki"),
+}
+TOOL_TO_GROUP = {
+    "read_emails": "mail", "send_email": "mail", "github_repos": "github", "github_search": "github", "github_issues": "github",
+    "github_notifications": "github", "github_read_file": "github", "github_create_issue": "github",
+    "firebase_overview": "firebase", "firebase_read": "firebase", "show_chart": "chart", "web_search": "web", "read_url": "web",
+    "call_contact": "phone", "send_sms": "phone", "whatsapp_message": "phone", "telegram_send": "telegram",
+    "play_music": "media", "watch_video": "media", "save_note": "notes", "list_notes": "notes", "set_reminder": "notes",
+    "get_weather": "weather", "get_news": "weather", "wikipedia": "lookup", "lookup": "lookup",
+    "open_app": "apps", "open_url": "apps", "facebook_instagram": "apps",
+}
+
+
+def select_tools(message, extra_names=None, allowed=None):
+    """Send only the tools a request could need: far fewer tokens per call."""
+    if allowed:
+        return [t for t in TOOLS if t["name"] in allowed or t["name"] in (extra_names or ())]
+    m = (message or "").lower()
+    on = {g for g, words in TOOL_GROUPS.items() if any(w in m for w in words)}
+    if len(m) < 6: on = set()
+    picked = [t for t in TOOLS if TOOL_TO_GROUP.get(t["name"]) in on or t["name"] in (extra_names or ())]
+    if not picked:  # unknown intent: give a small general set
+        picked = [t for t in TOOLS if t["name"] in ("web_search", "lookup", "open_app", "wikipedia")]
+    if allowed:
+        picked = [t for t in picked if t["name"] in allowed or t["name"] == "delegate"]
+    return picked
+
+
+def safe_fetch(url, limit=5000):
+    import ipaddress, socket
+    from urllib.parse import urlparse
+    u = urlparse(url if re.match(r"^https?://", url) else "https://" + url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("Bad URL.")
+    for info in socket.getaddrinfo(u.hostname, None):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("That address is private, so I won't open it.")
+    r = requests.get(u.geturl(), timeout=12, headers={"User-Agent": "Mozilla/5.0 AXO"}, allow_redirects=False)
+    if r.is_redirect and r.headers.get("location", "").startswith("http"):
+        return safe_fetch(r.headers["location"], limit)
+    text = re.sub(r"(?is)<(script|style|noscript).*?</\1>", " ", r.text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def web_search(query):
+    r = requests.post("https://html.duckduckgo.com/html/", data={"q": query}, timeout=12, headers={"User-Agent": "Mozilla/5.0 AXO"})
+    out = []
+    for m in re.finditer(r'class="result__a" href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>', r.text, re.S):
+        href = m.group(1)
+        mm = re.search(r"uddg=([^&]+)", href)
+        if mm:
+            from urllib.parse import unquote
+            href = unquote(mm.group(1))
+        clean = lambda t: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", t)).strip()
+        out.append({"title": clean(m.group(2)), "url": href, "snippet": clean(m.group(3))[:200]})
+        if len(out) >= 5: break
+    return out or [{"title": "No results", "url": "", "snippet": ""}]
+
+
+def run_agent(message, history, ai, integ, H, role=None, allowed=None, depth=0, bots=None, out=None):
     """H = dict of helper callables/values from main.py."""
     if not (ai.get("key") or "").strip():
         raise ValueError("AI isn't configured.")
     addr = ai.get("address") or "the user"
-    msgs = [{"role": "system", "content": SYSTEM.format(addr=addr, now=H["now"]().strftime("%A %d %b %Y, %I:%M %p"))}]
-    msgs += [{"role": m["role"], "content": str(m["content"])[:1500]} for m in (history or [])[-8:] if m.get("role") in ("user", "assistant")]
+    sysmsg = SYSTEM.format(addr=addr, now=H["now"]().strftime("%A %d %b %Y, %I:%M %p"))
+    if role:
+        sysmsg = role + "\n\n" + sysmsg
+    msgs = [{"role": "system", "content": sysmsg}]
+    msgs += [{"role": m["role"], "content": str(m["content"])[:700]} for m in (history or [])[-6:] if m.get("role") in ("user", "assistant")]
     msgs.append({"role": "user", "content": message})
-    tools = [{"type": "function", "function": t} for t in TOOLS]
-    out = {"actions": [], "confirms": [], "reminders": [], "cards": [], "news": None}
+    manager = bool(bots) and depth < 2
+    tools = [{"type": "function", "function": t} for t in select_tools(message + " " + (role or ""), ("delegate",) if manager else (), allowed)]
+    if not manager:
+        tools = [t for t in tools if t["function"]["name"] != "delegate"]
+    out = out if out is not None else {"actions": [], "confirms": [], "reminders": [], "cards": [], "news": None, "charts": [], "trace": []}
     prefs = {"platform": ai.get("platform", "youtube"), "video_platform": ai.get("video_platform", "youtube")}
 
     def call(name, a):
@@ -508,7 +602,34 @@ def run_agent(message, history, ai, integ, H):
             num = AC.resolve_contact(a.get("who"), integ.get("contacts"))
             out["actions"].append(AC.contact_action(kind, num, str(a.get("text", "")))); return f"Ready: {kind} {a.get('who')}."
         if name == "firebase_overview":
-            return json.dumps(firebase_overview(integ.get("firebase", {})))
+            ov = firebase_overview(integ.get("firebase", {}))
+            cols = [c for c in ov["collections"] if c.get("documents") is not None]
+            if cols:
+                out["charts"].append({"title": f"Documents per collection ({ov['project']})", "type": "bar", "labels": [c["name"] for c in cols], "values": [c["documents"] for c in cols]})
+            return json.dumps(ov)[:3500]
+        if name == "show_chart":
+            vals = [float(v) for v in (a.get("values") or [])[:30]]
+            labs = [str(x)[:24] for x in (a.get("labels") or [])[:30]]
+            n = min(len(vals), len(labs))
+            out["charts"].append({"title": str(a.get("title", "Chart"))[:80], "type": a.get("type", "bar") if a.get("type") in ("bar", "line", "pie") else "bar", "labels": labs[:n], "values": vals[:n]})
+            return "Chart shown to the user."
+        if name == "web_search":
+            return json.dumps(web_search(str(a.get("query", ""))))[:3000]
+        if name == "read_url":
+            return safe_fetch(str(a.get("url", "")))
+        if name == "lookup":
+            r = H["local"](str(a.get("query", "")), prefs)
+            if not r: return "No built-in source matched. Try web_search."
+            for k in ("images", "map", "cards", "news"):
+                if r.get(k): out[k if k != "cards" else "cards"] = r[k] if k != "cards" else (out.get("cards") or []) + r[k]
+            if r.get("action"): out["actions"].append(r["action"])
+            return str(r.get("reply", ""))[:1500]
+        if name == "delegate":
+            target = next((b for b in (bots or []) if str(b.get("name", "")).lower() == str(a.get("bot", "")).lower()), None)
+            if not target: return "No bot with that name. Team: " + ", ".join(b.get("name", "") for b in bots)
+            rep, _ = run_bot(target, str(a.get("task", "")), [], ai, integ, H, bots, depth + 1, out)
+            out["trace"].append({"bot": target.get("name"), "task": str(a.get("task", ""))[:120], "result": rep[:200]})
+            return rep[:1500]
         if name == "firebase_read":
             return json.dumps(firebase_read(integ.get("firebase", {}), a.get("collection"), a.get("limit", 5)))
         if name == "telegram_send":
@@ -522,8 +643,8 @@ def run_agent(message, history, ai, integ, H):
         return "Unknown tool."
 
     reply = ""
-    for _ in range(6):
-        data = post_chat(ai, {"messages": msgs, "tools": tools, "temperature": 0.3, "max_tokens": 700})
+    for _ in range(5):
+        data = post_chat(ai, {"messages": msgs, "tools": tools, "temperature": 0.3, "max_tokens": 600})
         choice = data["choices"][0]["message"]
         calls = choice.get("tool_calls") or []
         if not calls:
@@ -535,8 +656,17 @@ def run_agent(message, history, ai, integ, H):
                 result = call(c["function"]["name"], args)
             except Exception as exc:
                 result = f"Error: {exc}"
-            msgs.append({"role": "tool", "tool_call_id": c["id"], "content": str(result)[:4000]})
+            msgs.append({"role": "tool", "tool_call_id": c["id"], "content": str(result)[:2500]})
     return reply or "Done.", out
+
+
+def run_bot(bot, message, history, ai, integ, H, bots, depth=0, out=None):
+    team = [b for b in (bots or []) if b.get("reportsTo") == bot.get("id")]
+    role = (f"You are {bot.get('name','Bot')}, a specialist bot. Your role: {str(bot.get('role',''))[:600]}. Stay in role; be concise.")
+    if team:
+        role += " You manage: " + "; ".join(f"{b.get('name')} ({str(b.get('role',''))[:80]})" for b in team) + ". Use delegate to assign work, then summarise results."
+    allowed = bot.get("tools") or None
+    return run_agent(message, history, ai, integ, H, role=role, allowed=allowed, depth=depth, bots=team if team else None, out=out)
 
 
 def test_ai(ai):
