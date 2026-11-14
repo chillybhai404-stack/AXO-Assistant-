@@ -33,7 +33,7 @@ NOTES_FILE = BASE_DIR / "notes.json"
 app = Flask(__name__)
 SESSION = requests.Session()
 SESSION.headers.update({
-    "User-Agent": "AXOWebPydroid/2.0 (personal educational assistant)",
+    "User-Agent": "AXOWebPydroid/3.0 (personal educational assistant)",
     "Accept": "application/json, text/plain, */*",
 })
 HTTP_TIMEOUT = 14
@@ -43,11 +43,6 @@ NOMINATIM_CACHE: dict[str, dict] = {}
 WEATHER_CACHE: dict[str, tuple[float, dict]] = {}
 IMAGE_CACHE: dict[str, tuple[float, list]] = {}
 WIKI_CACHE: dict[str, tuple[float, dict]] = {}
-API_DIRECTORY_CACHE: dict[str, object] = {"at": 0.0, "items": []}
-API_DIRECTORY_TTL = 12 * 60 * 60
-API_DIRECTORY_URL = "https://raw.githubusercontent.com/public-apis/public-apis/master/README.md"
-API_DIRECTORY_FILE = BASE_DIR / "api_directory_cache.json"
-NEWS_PROVIDER_STATUS = {"configured": False, "provider": "Not checked", "note": "News feed has not been requested yet."}
 
 
 def get_config(name: str, default=""):
@@ -75,7 +70,7 @@ def save_notes(notes):
     NOTES_FILE.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def make_result(reply, action=None, news=None, images=None, map_data=None, cards=None, source="local", intent=None, provider=None):
+def make_result(reply, action=None, news=None, images=None, map_data=None, cards=None, source="local", intent=None):
     result = {"reply": str(reply), "source": source}
     if action:
         result["action"] = action
@@ -89,8 +84,6 @@ def make_result(reply, action=None, news=None, images=None, map_data=None, cards
         result["cards"] = cards
     if intent:
         result["intent"] = intent
-    if provider:
-        result["provider"] = provider
     return result
 
 
@@ -130,7 +123,7 @@ def safe_calculate(expression: str):
 # Search normalization / intent extraction
 # ---------------------------------------------------------------------------
 FILLER = re.compile(
-    r"^(?:(?:hey\s+)?axo[\s,:-]*)?(?:(?:can you|could you|would you|please|"
+    r"^(?:(?:hey\s+)?jarvis[\s,:-]*)?(?:(?:can you|could you|would you|please|"
     r"tell me|show me|find me|search for|look up|i want to know|what is|what's|"
     r"who is|who's|give me|explain|about)\s+)+",
     re.I,
@@ -184,44 +177,34 @@ def detect_location_query(text: str, kind: str) -> str:
 # News: NewsAPI first, then keyless Google News RSS fallback
 # ---------------------------------------------------------------------------
 NEWS_TOPICS = {
-    "general": "", "business": "BUSINESS", "technology": "TECHNOLOGY",
+    "general": "HEADLINES", "business": "BUSINESS", "technology": "TECHNOLOGY",
     "science": "SCIENCE", "sports": "SPORTS", "entertainment": "ENTERTAINMENT",
     "health": "HEALTH",
 }
 
 
 def fetch_google_news(category="general", query=None):
-    topic = NEWS_TOPICS.get(category, "")
+    topic = NEWS_TOPICS.get(category, "HEADLINES")
     if query:
         url = "https://news.google.com/rss/search"
         params = {"q": query, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"}
-    elif topic:
-        url = f"https://news.google.com/rss/headlines/section/topic/{topic}"
-        params = {"hl": "en-IN", "gl": "IN", "ceid": "IN:en"}
     else:
-        url = "https://news.google.com/rss"
+        url = f"https://news.google.com/rss/headlines/section/topic/{topic}"
         params = {"hl": "en-IN", "gl": "IN", "ceid": "IN:en"}
     try:
         response = SESSION.get(url, params=params, timeout=HTTP_TIMEOUT)
         response.raise_for_status()
         root = ET.fromstring(response.content)
         articles = []
-        for item in root.findall(".//item")[:12]:
+        for item in root.findall(".//item")[:10]:
             title = item.findtext("title") or ""
             link = item.findtext("link") or ""
             if not title or not link:
                 continue
             source_node = item.find("source")
-            image = ""
-            for child in list(item):
-                tag = child.tag.lower()
-                if tag.endswith("thumbnail") or tag.endswith("content") or tag.endswith("enclosure"):
-                    image = child.attrib.get("url", "")
-                    if image:
-                        break
             articles.append({
                 "title": title, "source": source_node.text if source_node is not None else "Google News",
-                "description": "", "url": link, "image": image,
+                "description": "", "url": link, "image": "",
                 "published": item.findtext("pubDate") or "",
             })
         return articles, None
@@ -229,31 +212,20 @@ def fetch_google_news(category="general", query=None):
         return None, f"Keyless news feed unavailable: {exc}"
 
 
-def fetch_news(category="general", query=None):
-    """Try the configured NewsAPI key first; report the actual provider used."""
-    global NEWS_PROVIDER_STATUS
+def fetch_news(category="general"):
     category = str(category or "general").lower().strip()
     if category not in NEWS_TOPICS:
         category = "general"
-    query = clean_query(query) if query else None
-    api_key = str(get_config("NEWS_API_KEY") or "").strip()
-    configured = bool(api_key and "PASTE" not in api_key.upper())
-    newsapi_error = ""
-    if configured:
+    api_key = get_config("NEWS_API_KEY")
+    articles = None
+    if api_key and "PASTE" not in api_key:
         try:
-            params = {"country": "in", "category": category, "pageSize": 12}
-            if query:
-                params["q"] = query
             response = SESSION.get(
                 "https://newsapi.org/v2/top-headlines",
-                params=params,
-                headers={"X-Api-Key": api_key},
+                params={"country": "in", "category": category, "pageSize": 10, "apiKey": api_key},
                 timeout=HTTP_TIMEOUT,
             )
-            try:
-                data = response.json()
-            except ValueError:
-                data = {}
+            data = response.json()
             if response.ok and data.get("status") == "ok":
                 articles = [{
                     "title": x.get("title") or "Untitled",
@@ -261,26 +233,16 @@ def fetch_news(category="general", query=None):
                     "description": x.get("description") or "", "url": x.get("url") or "",
                     "image": x.get("urlToImage") or "", "published": x.get("publishedAt") or "",
                 } for x in data.get("articles", []) if x.get("title")]
-                if articles:
-                    NEWS_PROVIDER_STATUS = {"configured": True, "provider": "NewsAPI", "note": "Your NewsAPI key is configured and returned headlines."}
-                    return articles, None, "NewsAPI"
-                newsapi_error = "NewsAPI returned zero articles for this category or query."
-            else:
-                detail = data.get("message") or data.get("code") or f"HTTP {response.status_code}"
-                newsapi_error = f"NewsAPI response: {detail}"
-        except (requests.RequestException, ValueError, TypeError) as exc:
-            newsapi_error = f"NewsAPI request failed: {exc}"
-    else:
-        newsapi_error = "No valid NewsAPI key is configured in config.py."
-
-    fallback, error = fetch_google_news(category, query)
+        except (requests.RequestException, ValueError, TypeError):
+            articles = None
+    if articles:
+        return articles, None
+    fallback, error = fetch_google_news(category)
     if fallback:
-        note = f"Using Google News RSS. {newsapi_error}" if newsapi_error else "Using Google News RSS."
-        NEWS_PROVIDER_STATUS = {"configured": configured, "provider": "Google News RSS", "note": note}
-        return fallback, None, "Google News RSS"
-    note = f"{newsapi_error} · {error}" if newsapi_error else str(error or "No feed response.")
-    NEWS_PROVIDER_STATUS = {"configured": configured, "provider": "Unavailable", "note": note}
-    return None, note, "Unavailable"
+        return fallback, None
+    if error:
+        return None, error
+    return [], None
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +263,7 @@ def geocode_location(query: str):
         response = SESSION.get(
             "https://nominatim.openstreetmap.org/search",
             params={"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 1},
-            headers={"User-Agent": "AXOWebPydroid/2.0 (personal educational project)"},
+            headers={"User-Agent": "AXOWebPydroid/3.0 (personal educational project)"},
             timeout=HTTP_TIMEOUT,
         )
         NOMINATIM_LAST_CALL = time.monotonic()
@@ -748,11 +710,21 @@ def get_fun_data(kind, query=""):
 # Optional external AI (fallback only for open-ended questions)
 # ---------------------------------------------------------------------------
 def ask_external_ai(message: str, history=None):
-    endpoint = get_config("AI_API_URL")
+    provider = str(get_config("AI_PROVIDER", "openrouter") or "openrouter").strip().lower()
+    endpoint = str(get_config("AI_API_URL", "") or "").strip().rstrip("/")
     api_key = get_config("AI_API_KEY")
     model = get_config("AI_MODEL", "")
+
+    supported_providers = {"openrouter", "openai-compatible", "openai_compatible", "custom", "generic"}
+    if provider not in supported_providers:
+        return None, f"AI provider not supported: {provider}. Use 'openrouter' or a compatible custom endpoint."
+    if provider == "openrouter" and not endpoint:
+        endpoint = "https://openrouter.ai/api/v1"
+    if endpoint and endpoint.endswith("/v1"):
+        endpoint += "/chat/completions"
     if not endpoint or not api_key or not model:
-        return None, "AI API is not configured."
+        return None, "AI API is not configured. Set AI_API_KEY, AI_MODEL and AI_API_URL (or use OpenRouter with its default URL)."
+
     messages = [{"role": "system", "content": get_config(
         "AI_SYSTEM_PROMPT",
         "You are AXO, a concise, helpful assistant. Use the supplied history. Be accurate and admit uncertainty."
@@ -763,7 +735,10 @@ def ask_external_ai(message: str, history=None):
                 messages.append({"role": item["role"], "content": item["content"][:3000]})
     messages.append({"role": "user", "content": message[:3000]})
     try:
-        response = SESSION.post(endpoint, headers={"Authorization": f"Bearer {api_key}"},
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        if provider == "openrouter":
+            headers["X-Title"] = "AXO Assistant"
+        response = SESSION.post(endpoint, headers=headers,
                                 json={"model": model, "messages": messages}, timeout=35)
         try:
             data = response.json()
@@ -876,10 +851,10 @@ def process_local_command(message: str):
             "calculate, manage notes, and open websites. Try: “What's the weather in Srinagar?” or "
             "“Show me pictures of Saturn”.", intent="help"
         )
-    if lower in ("hi", "hello", "hey", "hello axo", "hey axo"):
+    if lower in ("hi", "hello", "hey", "hello jarvis", "hey jarvis"):
         return make_result("Hello. AXO is online. I'm ready.", intent="greeting")
     if "who are you" in lower or "your name" in lower:
-        return make_result("I'm AXO, your personal assistant by AXU.", intent="identity")
+        return make_result("I'm AXO, your personal assistant running through Python and your browser.", intent="identity")
     if lower in ("time", "what time is it", "what's the time", "what is the time", "tell me the time") or "current time" in lower:
         return make_result("It's " + india_now().strftime("%I:%M %p") + " IST.", intent="time")
     if lower in ("date", "today", "what is the date", "what's the date") or "today's date" in lower:
@@ -1004,12 +979,12 @@ def process_local_command(message: str):
         query = None
         if " in " in lower:
             query = lower.split(" in ", 1)[1].strip()
-        articles, error, provider = fetch_news(category, query=query)
+        articles, error = fetch_news(category)
         if error:
-            return make_result("The news feeds are temporarily unavailable. " + error, intent="news", provider=provider)
+            return make_result("The news feeds are temporarily unavailable. " + error, intent="news")
         if not articles:
             return make_result("There aren't any headlines in the feed right now. Try another category or refresh shortly.", news=[], intent="news")
-        return make_result(f"Here are the latest {category} headlines.", news=articles, intent="news", provider=provider)
+        return make_result(f"Here are the latest {category} headlines.", news=articles, intent="news")
 
     if "earthquake" in lower or "seismic" in lower:
         items = get_earthquakes()
@@ -1146,13 +1121,11 @@ def home():
 def status():
     return jsonify({
         "ok": True,
-        "ai_configured": bool(get_config("AI_API_URL") and get_config("AI_API_KEY") and get_config("AI_MODEL")),
+        "ai_configured": bool((get_config("AI_API_URL") or str(get_config("AI_PROVIDER", "openrouter")).lower() == "openrouter") and get_config("AI_API_KEY") and get_config("AI_MODEL")),
         "news_configured": bool(get_config("NEWS_API_KEY") and "PASTE" not in get_config("NEWS_API_KEY")),
         "news_fallback": "Google News RSS",
-        "news_provider_status": {**NEWS_PROVIDER_STATUS, "configured": bool(get_config("NEWS_API_KEY") and "PASTE" not in str(get_config("NEWS_API_KEY")).upper())},
         "music_count": len(musicLibrary.music), "video_count": len(videosLibrary.videos),
         "api_catalog_count": len(API_CATALOG),
-        "api_directory_source": "GitHub public-apis with local fallback",
         "integrations": ["Open-Meteo", "Wikipedia", "Openverse", "Wikimedia Commons", "NASA Images",
                          "Nominatim", "USGS", "ISS", "Frankfurter", "Nager.Date", "GitHub",
                          "Open Library", "Gutendex", "TheMealDB", "DictionaryAPI", "REST Countries",
@@ -1211,104 +1184,9 @@ def library():
     return jsonify({"music": musicLibrary.music, "videos": videosLibrary.videos})
 
 
-def parse_public_api_readme(markdown: str):
-    """Parse the category tables from the upstream public-apis README."""
-    items = []
-    area = "Public APIs"
-    in_index = False
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if line == "## Index":
-            in_index = True
-            continue
-        if not in_index:
-            continue
-        if line.startswith("## ") and line != "## Index":
-            break
-        if line.startswith("### "):
-            area = line[4:].strip()
-            continue
-        if not line.startswith("|") or "[" not in line or "](" not in line:
-            continue
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if len(cells) < 5:
-            continue
-        match = re.search(r"\[([^\]]+)\]\((https?://[^)]+)\)", cells[0])
-        if not match:
-            continue
-        title, docs = match.group(1).strip(), match.group(2).strip()
-        description = re.sub(r"\s+", " ", cells[1]).strip()
-        auth = re.sub(r"[`*_]", "", cells[2]).strip() or "Unknown"
-        https = re.sub(r"[`*_]", "", cells[3]).strip() or "Unknown"
-        cors = re.sub(r"[`*_]", "", cells[4]).strip() or "Unknown"
-        # The upstream file has some additional tables near its end; only include
-        # normal API rows with a name, description and a usable documentation URL.
-        if not title or not description:
-            continue
-        items.append({
-            "provider": title, "area": area, "title": title, "description": description,
-            "docs": docs, "auth": auth, "https": https, "cors": cors,
-            "keyless": auth.lower() in ("no", "none"), "directory_source": "GitHub public-apis",
-        })
-    return items
-
-
-def get_public_api_directory(force_refresh=False):
-    now = time.time()
-    cached = API_DIRECTORY_CACHE.get("items") or []
-    if not cached and API_DIRECTORY_FILE.exists():
-        try:
-            saved = json.loads(API_DIRECTORY_FILE.read_text(encoding="utf-8"))
-            saved_items = saved.get("items", []) if isinstance(saved, dict) else []
-            if isinstance(saved_items, list) and len(saved_items) >= 250:
-                cached = saved_items
-                API_DIRECTORY_CACHE["items"] = saved_items
-                API_DIRECTORY_CACHE["at"] = float(saved.get("at", 0))
-        except (OSError, ValueError, TypeError):
-            cached = []
-    if cached and not force_refresh and now - float(API_DIRECTORY_CACHE.get("at", 0)) < API_DIRECTORY_TTL:
-        return cached, "GitHub public-apis"
-    try:
-        response = SESSION.get(API_DIRECTORY_URL, timeout=12)
-        response.raise_for_status()
-        parsed = parse_public_api_readme(response.text)
-        # Do not replace a good cached directory with a truncated or unexpected response.
-        if len(parsed) >= 250:
-            API_DIRECTORY_CACHE["at"] = now
-            API_DIRECTORY_CACHE["items"] = parsed
-            try:
-                API_DIRECTORY_FILE.write_text(json.dumps({"at": now, "items": parsed}, ensure_ascii=False), encoding="utf-8")
-            except OSError as exc:
-                app.logger.info("API directory cache could not be saved: %s", exc)
-            return parsed, "GitHub public-apis"
-    except (requests.RequestException, ValueError, TypeError) as exc:
-        app.logger.info("Public API directory refresh skipped: %s", exc)
-    return cached or [], "Cached GitHub public-apis" if cached else "Local catalogue fallback"
-
-
 @app.get("/api/apis")
 def api_catalog_route():
-    force = request.args.get("refresh") == "1"
-    remote, source = get_public_api_directory(force_refresh=force)
-    combined = []
-    seen = set()
-    for item in list(API_CATALOG) + list(remote):
-        key = (str(item.get("title", "")).lower(), str(item.get("docs", "")).lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized = dict(item)
-        normalized.setdefault("auth", "Unknown")
-        normalized.setdefault("https", "Unknown")
-        normalized.setdefault("cors", "Unknown")
-        if "keyless" not in normalized:
-            normalized["keyless"] = str(normalized.get("auth", "")).lower() in ("no", "none")
-        combined.append(normalized)
-    return jsonify({
-        "ok": True, "count": len(combined), "keyless_count": sum(1 for x in combined if x.get("keyless")),
-        "source": source, "items": combined,
-        "directory_url": "https://github.com/public-apis/public-apis",
-    })
+    return jsonify({"ok": True, "count": len(API_CATALOG), "items": API_CATALOG})
 
 
 @app.route("/api/notes", methods=["GET", "POST", "DELETE"])
@@ -1331,11 +1209,10 @@ def notes_route():
 @app.get("/api/news")
 def news_route():
     category = request.args.get("category", "general")
-    query = request.args.get("q", "").strip() or None
-    articles, error, provider = fetch_news(category, query=query)
+    articles, error = fetch_news(category)
     if error:
-        return jsonify({"ok": False, "error": error, "provider": provider, "provider_status": NEWS_PROVIDER_STATUS}), 503
-    return jsonify({"ok": True, "articles": articles or [], "provider": provider, "provider_status": NEWS_PROVIDER_STATUS, "count": len(articles or [])})
+        return jsonify({"ok": False, "error": error}), 503
+    return jsonify({"ok": True, "articles": articles or [], "provider": "NewsAPI" if get_config("NEWS_API_KEY") and "PASTE" not in get_config("NEWS_API_KEY") else "Google News RSS"})
 
 
 @app.post("/api/chat")
@@ -1358,7 +1235,7 @@ def chat_route():
         return jsonify({"ok": True, **make_result(ai_error + "\n\nYour local commands are still available. Type 'help' for examples.", intent="error")})
     return jsonify({"ok": True, **make_result(
         "I can search public data and run local commands, but open-ended conversation needs an optional AI provider. "
-        "Try weather, Wikipedia, image search, maps, news, books or GitHub. For open-ended conversation, connect an optional AI provider in config.py.",
+        "Try a direct request such as weather, Wikipedia, images, maps, news, earthquakes, books or GitHub.",
         intent="help",
     )})
 

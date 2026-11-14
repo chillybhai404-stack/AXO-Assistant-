@@ -1,4 +1,4 @@
-"""Curated catalogue of public API endpoints used or discoverable by AXO.
+"""Curated catalogue of public API endpoints used or discoverable by Jarvis.
 
 The catalogue is not a promise of unlimited availability. Read each provider's
 documentation, rate limits, attribution and personal/commercial terms.
