@@ -47,6 +47,7 @@
         <div class="sidebar-tools-heading">YOUR SPACE</div>
         <button class="side-tool" data-panel="news" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>News</span></button>
         <button class="side-tool" data-panel="apis" type="button"><svg class="icon"><use href="#i-search"/></svg><span>API library</span></button>
+        <button class="side-tool" data-panel="apps" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>Apps</span></button>
         <button class="side-tool" data-panel="music" type="button"><svg class="icon"><use href="#i-music"/></svg><span>Music</span></button>
         <button class="side-tool" data-panel="videos" type="button"><svg class="icon"><use href="#i-video"/></svg><span>Videos</span></button>
         <button class="side-tool" data-panel="notes" type="button"><svg class="icon"><use href="#i-note"/></svg><span>Notes</span></button>
@@ -108,6 +109,7 @@
           <div class="api-toolbar"><input id="apiSearch" type="search" placeholder="Search providers or capabilities…"><span id="apiCount">Loading catalogue</span></div>
           <div class="api-grid" id="apiGrid"><div class="empty-state">Loading API catalogue…</div></div>
         </section>
+        <section class="panel secondary-panel" id="panel-apps"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Apps</h1><p>Tap to open on your phone. Or just say “open calculator”.</p></div></div><div class="apps-grid" id="appsGrid"></div></section>
         <section class="panel secondary-panel" id="panel-music"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Music</h1><p>Saved music shortcuts.</p></div></div><form class="note-form lib-form" data-type="music"><input class="lib-name" maxlength="60" placeholder="Name (e.g. skyfall)" required><input class="lib-url" type="url" placeholder="Paste song link (https://…)" required><button type="submit">Add <span>＋</span></button></form><div class="library-grid" id="musicGrid"></div></section>
         <section class="panel secondary-panel" id="panel-videos"><div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>Videos</h1><p>Saved video shortcuts.</p></div></div><form class="note-form lib-form" data-type="videos"><input class="lib-name" maxlength="60" placeholder="Name (e.g. skyfall)" required><input class="lib-url" type="url" placeholder="Paste video link (https://…)" required><button type="submit">Add <span>＋</span></button></form><div class="library-grid" id="videosGrid"></div></section>
         <section class="panel secondary-panel" id="panel-notes"><div class="section-heading"><div><span class="section-eyebrow">LOCAL MEMORY</span><h1>Notes</h1><p>Notes stored locally beside the Python backend.</p></div></div><form class="note-form" id="noteForm"><input id="noteInput" maxlength="500" placeholder="Write a note to save…"><button type="submit">Save note <span>＋</span></button></form><div class="notes-list" id="notesList"></div><button class="text-button" id="clearNotes" type="button">Clear all notes</button></section>
@@ -123,6 +125,9 @@
         <button data-sec="appearance" type="button">Appearance</button>
         <button data-sec="voice" type="button">Voice</button>
         <button data-sec="chat" type="button">Chat & media</button>
+        <button data-sec="ai" type="button">AI & API</button>
+        <button data-sec="integrations" type="button">Integrations</button>
+        <button data-sec="contacts" type="button">Contacts</button>
         <button data-sec="library" type="button">Library</button>
         <button data-sec="data" type="button">Data</button>
         <button data-sec="about" type="button">About</button>
@@ -133,13 +138,16 @@
           <label class="setting-row"><span><strong>Call me</strong><small>How AXO addresses you.</small></span><select id="addressSetting"><option value="name">My name</option><option value="Sir">Sir</option><option value="Madam">Madam</option><option value="Boss">Boss</option><option value="namesir">Name + Sir</option><option value="custom">Custom…</option></select></label>
           <label class="setting-row" id="customAddressRow"><span><strong>Custom title</strong><small>Anything you like.</small></span><input id="customAddressSetting" maxlength="30" placeholder="e.g. Commander"></label>
           <label class="setting-row"><span><strong>Show greeting</strong><small>“Good morning, …” on the home screen.</small></span><input id="greetShowSetting" type="checkbox" class="toggle-input"></label>
-          <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO (needs one tap on some browsers).</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
-          <div class="setting-row"><span><strong>Preview greeting</strong><small id="greetPreview"></small></span><button class="pill-button" id="greetTest" type="button">Play</button></div>
+          <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO. Some browsers need one tap before audio can play.</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Welcome chime</strong><small>Play a soft original sound when AXO greets you.</small></span><input id="greetChimeSetting" type="checkbox" class="toggle-input"></label>
+          <div class="setting-row"><span><strong>Preview greeting</strong><small id="greetPreview"></small></span><button class="pill-button" id="greetTest" type="button">Preview</button></div>
         </section>
         <section class="sp-sec" id="sec-appearance"><h3>Appearance</h3>
           <label class="setting-row"><span><strong>Theme</strong><small>Choose how AXO looks.</small></span><select id="themeSetting"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
           <div class="setting-row"><span><strong>Accent colour</strong><small>Toggles, links and highlights.</small></span><div class="swatches" id="accentSwatches"></div></div>
           <label class="setting-row"><span><strong>Text size</strong><small>Scales the whole interface.</small></span><select id="fontSizeSetting"><option value="90">Small</option><option value="100">Normal</option><option value="112">Large</option><option value="125">Extra large</option></select></label>
+          <label class="setting-row"><span><strong>Compact layout</strong><small>Reduce spacing to fit more content on screen.</small></span><input id="compactSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Reduce motion</strong><small>Use simpler transitions and animations.</small></span><input id="reduceMotionSetting" type="checkbox" class="toggle-input"></label>
         </section>
         <section class="sp-sec" id="sec-voice"><h3>Voice</h3>
           <label class="setting-row"><span><strong>Voice replies</strong><small>Read AXO's replies aloud.</small></span><input id="voiceReplySetting" type="checkbox" class="toggle-input"></label>
@@ -150,17 +158,93 @@
         <section class="sp-sec" id="sec-chat"><h3>Chat & media</h3>
           <label class="setting-row"><span><strong>Enter to send</strong><small>Use Shift + Enter for a new line.</small></span><input id="enterSendSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Auto-open media</strong><small>“Play skyfall” opens the player right away.</small></span><input id="autoOpenSetting" type="checkbox" class="toggle-input"></label>
-          <label class="setting-row"><span><strong>Default music app</strong><small>Used for songs not in your library.</small></span><select id="platformSetting"><option value="youtube">YouTube</option><option value="youtube music">YouTube Music</option><option value="spotify">Spotify</option><option value="jiosaavn">JioSaavn</option><option value="gaana">Gaana</option><option value="soundcloud">SoundCloud</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option></select></label>
-          <p class="settings-footnote">Tip: say “play believer on spotify” or “watch cats on facebook” to pick an app per command.</p>
+          <label class="setting-row"><span><strong>Default music app</strong><small>Used for songs not in your library.</small></span><select id="platformSetting"><option value="youtube">YouTube</option><option value="youtube music">YouTube Music</option><option value="spotify">Spotify</option><option value="jiosaavn">JioSaavn</option><option value="gaana">Gaana</option><option value="soundcloud">SoundCloud</option><option value="apple music">Apple Music</option></select></label>
+          <label class="setting-row"><span><strong>Default video app</strong><small>Used when you say “watch …”.</small></span><select id="videoPlatformSetting"><option value="youtube">YouTube</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="netflix">Netflix search</option><option value="tiktok">TikTok</option></select></label>
+          <label class="setting-row"><span><strong>Web search engine</strong><small>Used for “search …” and “show me …” results.</small></span><select id="searchEngineSetting"><option value="google">Google</option><option value="bing">Bing</option><option value="duckduckgo">DuckDuckGo</option></select></label>
+          <label class="setting-row"><span><strong>Open links in</strong><small>Choose where automatic actions open.</small></span><select id="openTargetSetting"><option value="new_tab">New tab</option><option value="same_tab">Current tab</option></select></label>
+          <label class="setting-row"><span><strong>Browser notifications</strong><small>Show reminders as notifications when allowed.</small></span><input id="notificationsSetting" type="checkbox" class="toggle-input"></label>
+          <p class="settings-footnote">Examples: “play Skyfall”, “watch a space documentary”, “open Google Calendar”, or name a service in your request. AXO only opens supported links; it does not control another service's private account data.</p>
         </section>
         <section class="sp-sec" id="sec-library"><h3>Library</h3>
           <div class="setting-row"><span><strong>Music links</strong><small id="musicCount">Add songs with a name and link.</small></span><button class="pill-button" data-go="music" type="button">Manage</button></div>
           <div class="setting-row"><span><strong>Video links</strong><small id="videoCount">Add videos with a name and link.</small></span><button class="pill-button" data-go="videos" type="button">Manage</button></div>
         </section>
-        <section class="sp-sec danger-zone" id="sec-data"><h3>Data controls</h3>
+        <section class="sp-sec" id="sec-ai"><h3>AI & API</h3>
+          <p class="settings-footnote">Connect a provider for open-ended chat. AXO's local tools (weather, maps, images, media, notes and public data) continue to work if an AI provider is offline.</p>
+          <label class="setting-row"><span><strong>Agent mode</strong><small>Let the AI call AXO tools for multi-step tasks. Turn off for simple chat only.</small></span><input id="aiAgent" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>AI provider</strong><small>Choose the service that issued your key.</small></span><select id="aiProvider"><option value="auto">Auto-detect from key</option><option value="openrouter">OpenRouter</option><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="custom">Custom OpenAI-compatible</option></select></label>
+          <label class="setting-row"><span><strong>API key</strong><small>Use a key from the provider you selected. Never paste it into a chat message.</small></span><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your API key"></label>
+          <label class="setting-row"><span><strong>Model ID</strong><small>Leave blank to use AXO's provider default.</small></span><input id="aiModel" list="aiModels" autocomplete="off" placeholder="e.g. openrouter/free"><datalist id="aiModels"></datalist></label>
+          <label class="setting-row" id="aiUrlRow"><span><strong>Custom API URL</strong><small>Base URL or full /chat/completions endpoint.</small></span><input id="aiUrl" inputmode="url" placeholder="https://your-provider.example/v1"></label>
+          <div class="setting-row"><span><strong>Available models</strong><small id="modelFetchMsg">Fetch the models supported by this key.</small></span><button class="pill-button" id="fetchModels" type="button">Fetch models</button></div>
+          <div class="setting-row"><span><strong>Test connection</strong><small id="aiTestMsg">Checks your key, endpoint and model.</small></span><button class="pill-button" data-test="ai" type="button">Test</button></div>
+          <p class="settings-footnote">Model defaults are kept current in the project where verified. Free providers may impose daily limits or temporary rate limits. A successful connection test checks a tiny text request; it does not guarantee unlimited usage.</p>
+        </section>
+        <section class="sp-sec" id="sec-integrations"><h3>Integrations</h3>
+          <p class="settings-footnote">Credentials stay in this browser and are sent to your own AXO server only when needed. Never share a device you've saved them on.</p>
+          <h4 class="int-h">Email (Gmail, Outlook, Yahoo, iCloud)</h4>
+          <label class="setting-row"><span><strong>Email address</strong><small>Read the newest mail, and write mail you confirm.</small></span><input id="gmEmail" type="email" placeholder="you@gmail.com"></label>
+          <label class="setting-row"><span><strong>App password</strong><small>Not your normal password — create one in your account's security settings (needs 2-step verification).</small></span><input id="gmPass" type="password" autocomplete="off" placeholder="xxxx xxxx xxxx xxxx"></label>
+          <div class="setting-row"><span><strong>Test email</strong><small id="gmailTestMsg"></small></span><button class="pill-button" data-test="gmail" type="button">Test</button></div>
+          <h4 class="int-h">GitHub</h4>
+          <label class="setting-row"><span><strong>Personal access token</strong><small>github.com → Settings → Developer settings → Tokens. Needs repo + notifications.</small></span><input id="ghToken" type="password" autocomplete="off" placeholder="ghp_…"></label>
+          <div class="setting-row"><span><strong>Test GitHub</strong><small id="githubTestMsg"></small></span><button class="pill-button" data-test="github" type="button">Test</button></div>
+          <h4 class="int-h">Firebase (Firestore)</h4>
+          <label class="setting-row stack"><span><strong>Service account JSON</strong><small>Firebase console → Project settings → Service accounts → Generate key. Use a read-only role (Cloud Datastore Viewer) and paste the whole file. Then ask “what's going on in my Firebase?”</small></span><textarea id="fbJson" rows="4" placeholder='{"type":"service_account", …}'></textarea></label>
+          <div class="setting-row"><span><strong>Test Firebase</strong><small id="firebaseTestMsg"></small></span><button class="pill-button" data-test="firebase" type="button">Test</button></div>
+          <h4 class="int-h">Telegram</h4>
+          <label class="setting-row"><span><strong>Bot token</strong><small>From @BotFather.</small></span><input id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC…"></label>
+          <label class="setting-row"><span><strong>Chat ID</strong><small>Where messages are sent.</small></span><input id="tgChat" placeholder="e.g. 123456789"></label>
+          <div class="setting-row"><span><strong>Test Telegram</strong><small id="telegramTestMsg"></small></span><button class="pill-button" data-test="telegram" type="button">Test</button></div>
+          <h4 class="int-h">Quick access services</h4>
+          <p class="settings-footnote">These open their official websites or apps. This is not account-level API access. AXO does not receive your passwords or control private accounts through these shortcuts.</p>
+          <div class="service-shortcuts">
+            <button type="button" data-service="https://calendar.google.com">Google Calendar</button>
+            <button type="button" data-service="https://drive.google.com">Google Drive</button>
+            <button type="button" data-service="https://discord.com/app">Discord</button>
+            <button type="button" data-service="https://www.notion.so">Notion</button>
+            <button type="button" data-service="https://www.canva.com">Canva</button>
+            <button type="button" data-service="https://www.figma.com">Figma</button>
+            <button type="button" data-service="https://www.dropbox.com">Dropbox</button>
+            <button type="button" data-service="https://www.microsoft.com/microsoft-365">Microsoft 365</button>
+            <button type="button" data-service="https://docs.google.com">Google Docs</button>
+            <button type="button" data-service="https://sheets.google.com">Google Sheets</button>
+            <button type="button" data-service="https://keep.google.com">Google Keep</button>
+            <button type="button" data-service="https://outlook.live.com">Outlook</button>
+            <button type="button" data-service="https://onedrive.live.com">OneDrive</button>
+            <button type="button" data-service="https://slack.com">Slack</button>
+            <button type="button" data-service="https://trello.com">Trello</button>
+            <button type="button" data-service="https://linear.app">Linear</button>
+            <button type="button" data-service="https://gitlab.com">GitLab</button>
+            <button type="button" data-service="https://vercel.com">Vercel</button>
+            <button type="button" data-service="https://replit.com">Replit</button>
+            <button type="button" data-service="https://stackblitz.com">StackBlitz</button>
+            <button type="button" data-service="https://codepen.io">CodePen</button>
+            <button type="button" data-service="https://huggingface.co">Hugging Face</button>
+            <button type="button" data-service="https://www.kaggle.com">Kaggle</button>
+            <button type="button" data-service="https://www.pinterest.com">Pinterest</button>
+            <button type="button" data-service="https://www.reddit.com">Reddit</button>
+            <button type="button" data-service="https://open.spotify.com">Spotify</button>
+            <button type="button" data-service="https://music.youtube.com">YouTube Music</button>
+            <button type="button" data-service="https://console.firebase.google.com">Firebase Console</button>
+          </div>
+          <h4 class="int-h">Built-in public data integrations</h4>
+          <p class="settings-footnote">No API keys needed: weather, maps/geocoding, Wikipedia, image search, news feeds, earthquakes, ISS tracking, currency rates, public holidays, GitHub search, books, recipes, dictionary, country facts, space news, natural events, species data, word tools, trivia and World Bank indicators. Provider availability and rate limits can vary.</p>
+          <h4 class="int-h">Facebook & Instagram</h4>
+          <p class="settings-footnote">AXO can open and search these services, but cannot read private feeds or messages through the public shortcuts.</p>
+        </section>
+        <section class="sp-sec" id="sec-contacts"><h3>Contacts</h3>
+          <p class="settings-footnote">One per line as <b>name: number</b>. Then say “call Ammi”, “message Ali on WhatsApp”. AXO opens your dialer or chat with the number filled in — you tap to call/send.</p>
+          <textarea id="contactsText" rows="8" class="big-area" placeholder="ammi: +919876543210&#10;ali: +911234567890"></textarea>
+        </section>
+        <section class="sp-sec danger-zone" id="sec-data"><h3>Data & privacy</h3>
+          <div class="setting-row"><span><strong>Export conversations</strong><small>Download a JSON backup of your local chats.</small></span><button class="pill-button" id="exportChats" type="button">Export</button></div>
+          <div class="setting-row"><span><strong>Import conversations</strong><small>Restore a backup JSON file into this browser.</small></span><button class="pill-button" id="importChats" type="button">Import</button><input type="file" id="importChatsFile" accept="application/json,.json" hidden></div>
+          <div class="setting-row"><span><strong>Export preferences</strong><small>Download theme and app preferences without saved credentials.</small></span><button class="pill-button" id="exportPreferences" type="button">Export</button></div>
+          <div class="setting-row"><span><strong>Clear saved connection keys</strong><small>Remove AI, email, GitHub, Firebase and Telegram credentials from this browser.</small></span><button class="danger-button" id="clearCredentials" type="button">Clear keys</button></div>
           <div class="setting-row"><span><strong>Clear all chat history</strong><small>Remove conversations saved in this browser.</small></span><button class="danger-button" id="clearAllHistory" type="button">Clear history</button></div>
           <div class="setting-row"><span><strong>Forget my name</strong><small>You'll be asked again next time.</small></span><button class="danger-button" id="forgetName" type="button">Forget</button></div>
-          <p class="settings-footnote">Chats and preferences stay in this browser. Your music/video library is stored beside the Python backend.</p>
+          <p class="settings-footnote">Chat history and preferences are stored in this browser on this device. Connection keys are stored in browser storage when you choose to save them; browser storage is not encrypted. The music/video library is stored by the AXO backend and may reset when a temporary hosting disk is redeployed.</p>
         </section>
         <section class="sp-sec" id="sec-about"><h3>About</h3>
           <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant</strong><small>Personal AI assistant · AXU</small></div></div>
