@@ -139,3 +139,26 @@ html[data-theme="light"] .topbar{background:rgba(255,255,255,.93)}html[data-them
 @media(max-width:420px){.topbar{padding:0 8px}.model-name{font-size:13px}.model-version{font-size:11px}.suggestions{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding:0 1px 5px}.suggestions button{flex:none}.news-grid,.api-grid{grid-template-columns:1fr}.news-image{height:150px}.composer-caption{font-size:8px}.settings-dialog{padding:16px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}}
 .history-item-title{padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit}.chat-rich-content:empty{display:none}
+
+/* ---- logo ---- */
+.brand-mark{background:#000!important;overflow:hidden;border:1px solid var(--line)}.brand-mark img,.settings-avatar img,.avatar img{width:100%;height:100%;object-fit:cover;display:block}.settings-avatar{background:#000!important;overflow:hidden}.avatar.logo-avatar{background:#000;overflow:hidden;padding:0}
+/* ---- full-page settings ---- */
+.settings-page{position:fixed;inset:0;z-index:80;display:none;flex-direction:column;background:var(--bg);color:var(--text)}.settings-page.open{display:flex}
+.sp-top{display:flex;align-items:center;gap:10px;padding:max(10px,env(safe-area-inset-top)) 14px 10px;border-bottom:1px solid var(--line)}.sp-top h2{flex:1;margin:0;font-size:18px;font-weight:600}
+.sp-body{flex:1;min-height:0;display:flex}.sp-nav{width:210px;flex:none;padding:14px 10px;display:flex;flex-direction:column;gap:3px;border-right:1px solid var(--line);overflow:auto}
+.sp-nav button{text-align:left;padding:11px 13px;border:0;border-radius:10px;background:transparent;color:var(--soft);font-size:13px}.sp-nav button.active,.sp-nav button:hover{background:var(--surface-2);color:var(--text)}
+.sp-content{flex:1;min-width:0;overflow:auto;padding:22px 26px max(30px,env(safe-area-inset-bottom));max-width:760px}
+.sp-sec{display:none}.sp-sec.active{display:block}.sp-sec h3{margin:0 0 10px;font-size:20px;font-weight:600;color:var(--text)}
+.sp-sec .setting-row{border-bottom:1px solid var(--line)}.setting-row input:not([type=checkbox]):not([type=range]){max-width:170px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px}.setting-row input[type=range]{max-width:150px;accent-color:var(--blue)}
+.pill-button{padding:8px 15px;border:1px solid var(--line);border-radius:20px;background:var(--surface-2);color:var(--text);font-size:12px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.swatches button{width:26px;height:26px;border-radius:50%;border:2px solid transparent;padding:0}.swatches button.on{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}
+.about-card{display:flex;align-items:center;gap:14px;padding:16px 0}.about-card img{width:56px;height:56px;border-radius:14px;background:#000}.about-card small{display:block;color:var(--muted);margin-top:4px}
+@media(max-width:760px){.sp-body{flex-direction:column}.sp-nav{width:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 10px}.sp-nav button{white-space:nowrap;flex:none}.sp-content{padding:16px 16px 40px}.setting-row select{max-width:130px}}
+/* ---- onboarding ---- */
+.onboard{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:20px;background:#000}.onboard.open{display:flex}
+.onboard-card{width:min(380px,100%);text-align:center;display:flex;flex-direction:column;gap:14px;color:#fff}.onboard-logo{width:110px;height:110px;margin:0 auto;border-radius:24px}.onboard-card h1{margin:4px 0 0;font-size:28px}.onboard-card p{margin:0;color:#aaa;font-size:14px}
+.onboard-card input{padding:14px 16px;border:1px solid #333;border-radius:14px;background:#151515;color:#fff;font-size:16px;text-align:center}
+.onboard-title{display:flex;gap:7px;justify-content:center;flex-wrap:wrap}.onboard-title button{padding:8px 13px;border:1px solid #333;border-radius:18px;background:transparent;color:#bbb;font-size:12px}.onboard-title button.on{background:#fff;color:#000;border-color:#fff}
+.onboard-go{padding:14px;border:0;border-radius:14px;background:#fff;color:#000;font-weight:600;font-size:15px}
+.lib-form{flex-wrap:wrap}.lib-form .lib-name{flex:0 1 150px}.lib-form .lib-url{flex:1 1 200px}.library-card{position:relative}.lib-del{position:absolute;top:8px;right:8px;width:26px;height:26px;border:0;border-radius:50%;background:#ffffff14;color:var(--soft);font-size:14px;line-height:1}
+.welcome-screen h1.greeting{font-size:32px}

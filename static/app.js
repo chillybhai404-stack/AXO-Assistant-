@@ -11,7 +11,12 @@ let activeConversation = null;
 let busy = false;
 let activeMaps = [];
 let apiCatalog = [];
-let settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN' };
+let settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN',
+  name: '', address: 'name', customAddress: '', greetShow: true, greetSpeak: true,
+  accent: '#3989f6', fontSize: '100', voiceName: 'en-GB-RyanNeural', voiceRate: -5,
+  autoOpen: true, platform: 'youtube' };
+const ACCENTS = ['#3989f6', '#a3e635', '#f472b6', '#f59e0b', '#a78bfa', '#22d3ee', '#ef4444'];
+const LOGO_URL = '/static/logo.png';
 let voiceRecognition = null;
 
 function toast(message) {
@@ -168,12 +173,57 @@ function applySettings() {
   if (voiceInput) voiceInput.checked = !!settings.voiceReplies;
   if (langInput) langInput.value = settings.voiceLanguage || 'en-IN';
   if (voiceRecognition) voiceRecognition.lang = settings.voiceLanguage || 'en-IN';
+  const set = (id, key, isCheck) => { const el = $(id); if (el) { if (isCheck) el.checked = !!settings[key]; else el.value = settings[key] ?? ''; } };
+  set('#nameSetting', 'name'); set('#addressSetting', 'address'); set('#customAddressSetting', 'customAddress');
+  set('#greetShowSetting', 'greetShow', true); set('#greetSpeakSetting', 'greetSpeak', true);
+  set('#fontSizeSetting', 'fontSize'); set('#voiceNameSetting', 'voiceName'); set('#voiceRateSetting', 'voiceRate');
+  set('#autoOpenSetting', 'autoOpen', true); set('#platformSetting', 'platform');
+  const cr = $('#customAddressRow'); if (cr) cr.style.display = settings.address === 'custom' ? '' : 'none';
+  const rl = $('#rateLabel'); if (rl) { const r = Number(settings.voiceRate) || 0; rl.textContent = r === 0 ? 'Normal' : (r > 0 ? `Faster (+${r}%)` : `Slower (${r}%)`); }
+  document.documentElement.style.setProperty('--blue', settings.accent || '#3989f6');
+  document.documentElement.style.setProperty('--blue-2', settings.accent || '#67a7ff');
+  document.documentElement.style.fontSize = ((Number(settings.fontSize) || 100) / 100 * 16) + 'px';
+  $$('#accentSwatches button').forEach(b => b.classList.toggle('on', b.dataset.c === settings.accent));
+  const gp = $('#greetPreview'); if (gp) gp.textContent = greetingText() + '.';
+  const an = $('#accountName'); if (an) an.textContent = settings.name ? settings.name : 'AXO Assistant';
+  renderWelcome();
+}
+function addressName() {
+  const n = (settings.name || '').trim();
+  switch (settings.address) {
+    case 'Sir': return 'Sir';
+    case 'Madam': return 'Madam';
+    case 'Boss': return 'Boss';
+    case 'namesir': return n ? `${n} Sir` : 'Sir';
+    case 'custom': return (settings.customAddress || '').trim() || n;
+    default: return n;
+  }
+}
+function timeGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'Good morning';
+  if (h >= 12 && h < 17) return 'Good afternoon';
+  if (h >= 17 && h < 22) return 'Good evening';
+  return 'Hello';
+}
+function greetingText() { const a = addressName(); return a ? `${timeGreeting()}, ${a}` : timeGreeting(); }
+function renderWelcome() {
+  const h = $('#welcomeTitle'); if (!h) return;
+  if (settings.name && settings.greetShow) { h.textContent = greetingText(); h.classList.add('greeting'); }
+  else { h.textContent = 'What can I help with?'; h.classList.remove('greeting'); }
 }
 function openSettings() {
   const modal = $('#settingsModal');
+  closeSidebar();
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   applySettings();
+  refreshLibraryCounts();
+}
+function showSettingsSection(name) {
+  $$('#spNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === name));
+  $$('.sp-sec').forEach(sec => sec.classList.toggle('active', sec.id === `sec-${name}`));
+  $('.sp-content')?.scrollTo(0, 0);
 }
 function closeSettings() {
   const modal = $('#settingsModal');
@@ -190,7 +240,8 @@ function addMessage(role, text, extras = null) {
   wrap.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`;
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
-  avatar.textContent = role === 'user' ? 'U' : 'A';
+  if (role === 'user') avatar.textContent = ((settings.name || 'U').trim()[0] || 'U').toUpperCase();
+  else { avatar.classList.add('logo-avatar'); const img = document.createElement('img'); img.src = LOGO_URL; img.alt = 'AXO'; avatar.append(img); }
   const content = document.createElement('div');
   content.className = 'message-content';
   const bubble = document.createElement('div');
@@ -215,7 +266,7 @@ async function speak(text) {
     if (axuAudio) { axuAudio.pause(); axuAudio = null; }
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     const response = await fetch('/api/tts', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: spoken })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: spoken, voice: settings.voiceName, rate: Number(settings.voiceRate) || 0 })
     });
     if (!response.ok) throw new Error('Neural voice unavailable');
     const audioBlob = await response.blob();
@@ -261,13 +312,18 @@ async function sendMessage(rawText) {
   chat.updatedAt = Date.now();
   persistConversations();
   const contextHistory = chat.messages.slice(0, -1).filter(item => ['user', 'assistant'].includes(item.role)).slice(-8).map(item => ({ role: item.role, content: item.content }));
+  // Open a tab inside the click gesture so the browser doesn't block the redirect later.
+  let preWin = null;
+  if (settings.autoOpen !== false && /^\s*(play|watch|listen|open)\b/i.test(message)) {
+    try { preWin = window.open('about:blank', '_blank'); } catch { preWin = null; }
+  }
   const assistantHandle = addMessage('assistant', 'Thinking…');
   assistantHandle.bubble.classList.add('thinking');
   setCoreState('thinking');
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: contextHistory })
+      body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform } })
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || 'The request failed.');
@@ -282,7 +338,15 @@ async function sendMessage(rawText) {
     chat.updatedAt = Date.now();
     persistConversations();
     renderIntelligence(extras, assistantHandle.richHost);
-    if (data.action?.url) toast('Link ready.');
+    const mediaUrl = safeHttpUrl(data.action?.url);
+    if (data.action?.auto && settings.autoOpen !== false && mediaUrl) {
+      let opened = false;
+      if (preWin && !preWin.closed) { try { preWin.location.href = mediaUrl; opened = true; } catch { opened = false; } }
+      if (!opened) { const w = window.open(mediaUrl, '_blank'); opened = !!w; }
+      if (!opened) toast('Your browser blocked the pop-up — tap the link below.');
+      preWin = null;
+    } else if (data.action?.url) toast('Link ready.');
+    if (preWin && !preWin.closed) { try { preWin.close(); } catch { /* ignore */ } }
     if (settings.voiceReplies) speak(reply);
     else setCoreState('idle');
     setCoreState('idle');
@@ -290,6 +354,7 @@ async function sendMessage(rawText) {
     const failedReply = `I couldn't complete that request. ${error.message}`;
     assistantHandle.bubble.textContent = failedReply;
     assistantHandle.bubble.classList.remove('thinking');
+    if (preWin && !preWin.closed) { try { preWin.close(); } catch { /* ignore */ } }
     chat.messages.push({ role: 'assistant', content: failedReply, createdAt: Date.now() });
     chat.updatedAt = Date.now();
     persistConversations();
@@ -659,10 +724,16 @@ async function loadLibrary(type) {
       const title = document.createElement('div'); title.className = 'library-title'; title.textContent = name.replaceAll('_', ' ');
       const sub = document.createElement('div'); sub.className = 'library-sub'; sub.textContent = type === 'music' ? 'Saved music link' : 'Saved video link';
       const open = document.createElement('button'); open.className = 'library-open'; open.textContent = type === 'music' ? 'PLAY TRACK ↗' : 'WATCH VIDEO ↗';
-      open.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
-      card.append(symbol, title, sub, open); container.append(card);
+      open.addEventListener('click', () => window.open(safeHttpUrl(url), '_blank', 'noopener'));
+      const del = document.createElement('button'); del.className = 'lib-del'; del.type = 'button'; del.textContent = '×'; del.title = 'Remove';
+      del.addEventListener('click', async () => {
+        if (!confirm(`Remove "${name}"?`)) return;
+        try { await fetch('/api/library', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name }) }); loadLibrary(type); toast('Removed.'); }
+        catch { toast('Could not remove it.'); }
+      });
+      card.append(symbol, title, sub, open, del); container.append(card);
     });
-    if (!Object.keys(items).length) container.innerHTML = '<div class="empty-state">No links yet. Add some in the Python library file.</div>';
+    if (!Object.keys(items).length) container.innerHTML = '<div class="empty-state">Nothing here yet. Add a name and link above.</div>';
   } catch (error) { container.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; }
 }
 
@@ -821,5 +892,99 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }
 
+
+// ---------- full-page settings wiring ----------
+$$('#spNav button').forEach(b => b.addEventListener('click', () => showSettingsSection(b.dataset.sec)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); showPanel(b.dataset.go); }));
+const bind = (id, key, opts = {}) => {
+  const el = $(id); if (!el) return;
+  el.addEventListener(opts.check ? 'change' : 'input', () => {
+    settings[key] = opts.check ? el.checked : (opts.num ? Number(el.value) : el.value);
+    saveSettings(); applySettings();
+  });
+};
+bind('#nameSetting', 'name'); bind('#addressSetting', 'address'); bind('#customAddressSetting', 'customAddress');
+bind('#greetShowSetting', 'greetShow', { check: true }); bind('#greetSpeakSetting', 'greetSpeak', { check: true });
+bind('#fontSizeSetting', 'fontSize'); bind('#voiceNameSetting', 'voiceName'); bind('#voiceRateSetting', 'voiceRate', { num: true });
+bind('#autoOpenSetting', 'autoOpen', { check: true }); bind('#platformSetting', 'platform');
+ACCENTS.forEach(color => {
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.c = color; b.style.background = color; b.setAttribute('aria-label', color);
+  b.addEventListener('click', () => { settings.accent = color; saveSettings(); applySettings(); });
+  $('#accentSwatches')?.append(b);
+});
+$('#greetTest')?.addEventListener('click', () => playGreeting());
+$('#resetSettings')?.addEventListener('click', () => {
+  if (!confirm('Reset all settings to defaults? Your name is kept.')) return;
+  const keep = { name: settings.name, address: settings.address, customAddress: settings.customAddress };
+  try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
+  settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN', greetShow: true, greetSpeak: true,
+    accent: '#3989f6', fontSize: '100', voiceName: 'en-GB-RyanNeural', voiceRate: -5, autoOpen: true, platform: 'youtube', ...keep };
+  saveSettings(); applySettings(); toast('Settings reset.');
+});
+$('#forgetName')?.addEventListener('click', () => {
+  settings.name = ''; settings.onboarded = false; saveSettings(); applySettings(); closeSettings(); openOnboarding();
+});
+async function refreshLibraryCounts() {
+  try {
+    const d = await (await fetch('/api/library')).json();
+    $('#musicCount').textContent = `${Object.keys(d.music || {}).length} saved songs`;
+    $('#videoCount').textContent = `${Object.keys(d.videos || {}).length} saved videos`;
+  } catch { /* ignore */ }
+}
+$$('.lib-form').forEach(form => form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const type = form.dataset.type, name = $('.lib-name', form).value.trim(), url = $('.lib-url', form).value.trim();
+  if (!name || !url) return;
+  try {
+    const res = await fetch('/api/library', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name, url }) });
+    const d = await res.json(); if (!res.ok || !d.ok) throw new Error(d.error || 'Could not save.');
+    form.reset(); toast('Added to your library.'); loadLibrary(type);
+  } catch (error) { toast(error.message); }
+}));
+
+// ---------- onboarding + spoken greeting ----------
+function openOnboarding() {
+  const box = $('#onboard'); box.classList.add('open'); box.setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('#onboardName')?.focus(), 150);
+}
+let onboardAddress = 'name';
+$$('#onboardTitle button').forEach(b => b.addEventListener('click', () => {
+  onboardAddress = b.dataset.v; $$('#onboardTitle button').forEach(x => x.classList.toggle('on', x === b));
+}));
+function finishOnboarding() {
+  const name = $('#onboardName').value.trim();
+  if (!name) { $('#onboardName').focus(); return; }
+  settings.name = name.slice(0, 30); settings.address = onboardAddress; settings.onboarded = true;
+  saveSettings(); applySettings();
+  const box = $('#onboard'); box.classList.remove('open'); box.setAttribute('aria-hidden', 'true');
+  if (settings.greetSpeak) playGreeting(); // inside a tap, so audio is allowed
+}
+$('#onboardGo')?.addEventListener('click', finishOnboarding);
+$('#onboardName')?.addEventListener('keydown', e => { if (e.key === 'Enter') finishOnboarding(); });
+
+// returns 'ok' | 'blocked' | 'fail'
+async function playGreeting() {
+  const text = `${greetingText()}. How can I help?`;
+  try {
+    if (axuAudio) { axuAudio.pause(); axuAudio = null; }
+    const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: settings.voiceName, rate: Number(settings.voiceRate) || 0 }) });
+    if (!response.ok) throw new Error('tts');
+    const url = URL.createObjectURL(await response.blob());
+    axuAudio = new Audio(url);
+    axuAudio.onended = () => { URL.revokeObjectURL(url); axuAudio = null; };
+    try { await axuAudio.play(); return 'ok'; } catch { axuAudio = null; return 'blocked'; }
+  } catch { fallbackSpeak(text); return 'fail'; }
+}
+let greetDone = false;
+async function startGreeting() {
+  if (!settings.name || !settings.greetSpeak) return;
+  const result = await playGreeting();
+  if (result !== 'blocked') return;
+  const once = () => { if (greetDone) return; greetDone = true; playGreeting(); };
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, once, { once: true }));
+}
+
 readSavedData();
 loadStatus();
+if (!settings.name && !settings.onboarded) openOnboarding(); else startGreeting();
