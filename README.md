@@ -1,6 +1,6 @@
 # AXO Assistant — Pydroid 3 / Render
 
-A Flask-backed personal assistant with a simple chat-first interface, local conversation history, inline rich results, voice input and optional AI chat through OpenRouter or another OpenAI-compatible endpoint.
+A Flask-backed personal assistant with a chat-first interface, local conversation history, inline rich results, voice input and optional AI chat through OpenRouter, Google Gemini, OpenAI, Groq or a custom OpenAI-compatible endpoint.
 
 ## What is included
 
@@ -9,10 +9,14 @@ A Flask-backed personal assistant with a simple chat-first interface, local conv
 - Reopen, search, and delete individual conversations; clear all history from Settings.
 - Images, maps, weather, Wikipedia cards, news and other structured results appear inside the conversation instead of a separate floating results panel.
 - Microphone input using browser speech recognition (Chrome on Android is recommended).
+- First-visit name setup, local-time greetings, optional spoken greeting and original welcome chime.
+- Full-page Settings with profile, theme/accent/text size, compact/reduced-motion options, voice controls, media/search defaults, notification preference, AI provider/model selection, and integration shortcuts.
 - Optional spoken replies, selectable voice-input language, light/dark/system appearance, and Enter-to-send preference.
+- One-tap shortcuts for Google Workspace, Microsoft 365, team/project tools, developer platforms, AI services, media services and Firebase Console (website shortcuts, not account-level OAuth integrations).
+- Display-only “show me …” search results are kept separate from “play …” and “watch …” actions.
 - Existing News, API library, Music, Videos and Notes sections are retained.
 - Existing `musicLibrary.py` and `videosLibrary.py` are preserved unchanged.
-- OpenRouter-compatible AI adapter: a base URL ending in `/v1` is automatically completed with `/chat/completions`.
+- Shared AI adapter for browser-saved keys and private environment keys, with provider detection, model listing, clear error messages, and a fallback to known model defaults if a selected model ID is unavailable.
 
 ## Run on Android with Pydroid 3
 
@@ -35,7 +39,7 @@ AI_API_KEY=your_new_openrouter_key
 NEWS_API_KEY=your_newsapi_key
 ```
 
-The backend appends `/chat/completions` when the AI URL ends in `/v1`. You may also provide the full endpoint explicitly. Keep `.env` private and never commit real keys.
+The AI adapter appends `/chat/completions` when a custom API URL ends in `/v1`; you may also provide the full endpoint explicitly. AXO has built-in defaults for the supported providers. You can choose a model or fetch available model IDs from Settings → AI & API. Keep `.env` private and never commit real keys.
 
 ## Deploy on Render
 
@@ -71,12 +75,14 @@ Maps use Leaflet, Esri World Imagery and OpenStreetMap tiles. Attribution is sho
 - `config.py` — non-secret configuration and `.env` loader
 - `.env.example` — safe environment-variable template
 - `musicLibrary.py`, `videosLibrary.py` — preserved media shortcuts
-- `templates/index.html` — AXO interface and Settings dialog
+- `templates/index.html` — AXO interface and full-page Settings
 - `static/style.css` — responsive theme and interface styles
 - `static/app.js` — chat, local history, inline results, settings and voice input
 
 ## Notes
 
 - Browser voice input depends on browser support and microphone permission. Typing remains available.
+- Browsers and Android WebViews may block sound or automatic tabs until the user interacts with the page. AXO retries its greeting on first interaction; allow pop-ups for automatic link opening. A third-party search page may require the user to press Play itself.
+- Chat history, preferences and connection keys are browser-local; they do not sync automatically. Saved API/integration keys are not encrypted by Local Storage. Clear them from Settings → Data before using a shared device.
 - Edge TTS requires an internet connection; browser speech synthesis is used as a fallback.
 - Local Storage is browser-side storage, not encrypted cloud backup. Avoid entering passwords or other secrets into chat.

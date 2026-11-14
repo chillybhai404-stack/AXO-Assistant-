@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 import requests
 from flask import Flask, jsonify, render_template, request, Response
 
+import agent
+import apps_catalog
 import musicLibrary
 import videosLibrary
 import config
@@ -118,6 +120,16 @@ def platform_url(platform, query):
     platform = (platform or "youtube").lower().strip()
     tpl = PLATFORMS.get(platform, PLATFORMS["youtube"])[0]
     return tpl.format(q=quote_plus(query), qt=re.sub(r"\W+", "", query))
+
+
+def web_search_url(query, engine="google"):
+    q = quote_plus(str(query or "").strip())
+    engines = {
+        "google": f"https://www.google.com/search?q={q}",
+        "bing": f"https://www.bing.com/search?q={q}",
+        "duckduckgo": f"https://duckduckgo.com/?q={q}",
+    }
+    return engines.get(str(engine or "google").lower(), engines["google"])
 
 
 def split_platform(key):
@@ -783,59 +795,31 @@ def get_fun_data(kind, query=""):
 # Optional external AI (fallback only for open-ended questions)
 # ---------------------------------------------------------------------------
 def ask_external_ai(message: str, history=None):
+    """Use the same provider adapter for Render/Pydroid keys and browser keys."""
     provider = str(get_config("AI_PROVIDER", "openrouter") or "openrouter").strip().lower()
-    endpoint = str(get_config("AI_API_URL", "") or "").strip().rstrip("/")
-    api_key = get_config("AI_API_KEY")
-    model = get_config("AI_MODEL", "")
-
-    supported_providers = {"openrouter", "openai-compatible", "openai_compatible", "custom", "generic"}
-    if provider not in supported_providers:
-        return None, f"AI provider not supported: {provider}. Use 'openrouter' or a compatible custom endpoint."
-    if provider == "openrouter" and not endpoint:
-        endpoint = "https://openrouter.ai/api/v1"
-    if endpoint and endpoint.endswith("/v1"):
-        endpoint += "/chat/completions"
-    if not endpoint or not api_key or not model:
-        return None, "AI API is not configured. Set AI_API_KEY, AI_MODEL and AI_API_URL (or use OpenRouter with its default URL)."
-
-    messages = [{"role": "system", "content": get_config(
-        "AI_SYSTEM_PROMPT",
-        "You are AXO, a concise, helpful assistant. Use the supplied history. Be accurate and admit uncertainty."
-    )}]
-    if isinstance(history, list):
-        for item in history[-8:]:
-            if isinstance(item, dict) and item.get("role") in ("user", "assistant") and isinstance(item.get("content"), str):
-                messages.append({"role": item["role"], "content": item["content"][:3000]})
-    messages.append({"role": "user", "content": message[:3000]})
+    endpoint = str(get_config("AI_API_URL", "") or "").strip()
+    api_key = str(get_config("AI_API_KEY", "") or "").strip()
+    model = str(get_config("AI_MODEL", "") or "").strip()
+    if not api_key:
+        return None, "AI API is not configured. Add a provider key in Settings → AI & API or set AI_API_KEY in your private environment."
     try:
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        if provider == "openrouter":
-            headers["X-Title"] = "AXO Assistant"
-        response = SESSION.post(endpoint, headers=headers,
-                                json={"model": model, "messages": messages}, timeout=35)
-        try:
-            data = response.json()
-        except ValueError:
-            data = {"text": response.text}
-        if not response.ok:
-            detail = data.get("error", data.get("message", f"HTTP {response.status_code}"))
-            if isinstance(detail, dict):
-                detail = detail.get("message", str(detail))
-            return None, f"AI provider error: {detail}"
-        choices = data.get("choices") if isinstance(data, dict) else None
-        if choices:
-            content = (choices[0].get("message") or {}).get("content") or choices[0].get("text")
-            if isinstance(content, list):
-                content = " ".join(x.get("text", "") for x in content if isinstance(x, dict))
-            if content:
-                return str(content), None
-        for key in ("output", "response", "content", "text"):
-            value = data.get(key) if isinstance(data, dict) else None
-            if isinstance(value, str) and value.strip():
-                return value.strip(), None
-        return None, "The AI provider returned an unsupported response format."
-    except requests.RequestException as exc:
-        return None, f"Could not reach the AI provider: {exc}"
+        answer = agent.chat_text(
+            {"provider": provider, "url": endpoint, "key": api_key, "model": model},
+            message, history, "the user",
+        )
+        return answer, None
+    except Exception as exc:
+        status = getattr(exc, "status_code", None)
+        detail = str(exc)
+        if status == 401 or "401" in detail:
+            detail = "The API key was rejected (401). Check the key and provider."
+        elif status == 402 or "402" in detail:
+            detail = "The provider requires available credits for this model (402). Try a free model or another provider."
+        elif status == 403 or "403" in detail:
+            detail = "The provider denied this request (403). Check account access and model permissions."
+        elif status == 429 or "429" in detail:
+            detail = "The AI provider is rate-limiting this key or its free quota is exhausted (429). Wait for the limit to reset or choose another model."
+        return None, "AI connection failed: " + detail[:220]
 
 
 # ---------------------------------------------------------------------------
@@ -847,7 +831,28 @@ WEBSITES = {
     "instagram": "https://www.instagram.com", "github": "https://github.com",
     "wikipedia": "https://www.wikipedia.org", "gmail": "https://mail.google.com",
     "maps": "https://maps.google.com", "netlify": "https://www.netlify.com",
-    "render": "https://render.com",
+    "render": "https://render.com", "google calendar": "https://calendar.google.com",
+    "calendar": "https://calendar.google.com", "google drive": "https://drive.google.com",
+    "drive": "https://drive.google.com", "discord": "https://discord.com/app",
+    "notion": "https://www.notion.so", "canva": "https://www.canva.com",
+    "figma": "https://www.figma.com", "dropbox": "https://www.dropbox.com",
+    "microsoft 365": "https://www.microsoft.com/microsoft-365",
+    "chatgpt": "https://chatgpt.com", "claude": "https://claude.ai",
+    "gemini": "https://gemini.google.com", "perplexity": "https://www.perplexity.ai",
+    "google docs": "https://docs.google.com", "docs": "https://docs.google.com",
+    "google sheets": "https://sheets.google.com", "sheets": "https://sheets.google.com",
+    "google slides": "https://slides.google.com", "slides": "https://slides.google.com",
+    "google keep": "https://keep.google.com", "keep": "https://keep.google.com",
+    "outlook": "https://outlook.live.com", "onedrive": "https://onedrive.live.com",
+    "slack": "https://slack.com", "trello": "https://trello.com",
+    "linear": "https://linear.app", "gitlab": "https://gitlab.com",
+    "vercel": "https://vercel.com", "replit": "https://replit.com",
+    "stackblitz": "https://stackblitz.com", "codepen": "https://codepen.io",
+    "hugging face": "https://huggingface.co", "huggingface": "https://huggingface.co",
+    "kaggle": "https://www.kaggle.com", "pinterest": "https://www.pinterest.com",
+    "reddit": "https://www.reddit.com", "spotify": "https://open.spotify.com",
+    "youtube music": "https://music.youtube.com", "jiosaavn": "https://www.jiosaavn.com",
+    "apple music": "https://music.apple.com", "firebase": "https://console.firebase.google.com",
 }
 
 
@@ -961,6 +966,21 @@ def process_local_command(message: str, prefs=None):
     lib = load_library()
     prefs = prefs or {}
     default_platform = str(prefs.get("platform") or "youtube").lower()
+    default_video_platform = str(prefs.get("video_platform") or "youtube").lower()
+
+    contacts = prefs.get("contacts") or {}
+    m_call = re.match(r"^(?:call|phone|dial|ring)\s+(.+)$", media_text)
+    if m_call:
+        try:
+            num = apps_catalog.resolve_contact(m_call.group(1), contacts)
+            return make_result(f"Calling {m_call.group(1)}. Tap call in your dialer.", apps_catalog.contact_action("call", num), intent="call")
+        except ValueError as exc:
+            return make_result(str(exc), intent="call")
+    m_open = re.match(r"^(?:open|launch|start|run)\s+(.+)$", media_text)
+    if m_open:
+        key = apps_catalog.find_app(m_open.group(1))
+        if key:
+            return make_result(f"Opening {apps_catalog.APPS[key][0]}.", apps_catalog.app_action(key), intent="open")
 
     # "open youtube" / "open facebook" -> open the site itself
     site = media_text[5:].strip() if media_text.startswith("open ") else None
@@ -1003,7 +1023,7 @@ def process_local_command(message: str, prefs=None):
             return make_result(f"Opening {matched}.",
                                {"type": "open_url", "url": lib["videos"][matched], "label": f"WATCH {matched.upper()}", "auto": True},
                                intent="video")
-        target = platform or "youtube"
+        target = platform or default_video_platform
         return make_result(f"Searching {video_key} on {target.title()}.",
                            {"type": "open_url", "url": platform_url(target, video_key), "label": f"WATCH {video_key.upper()}", "auto": True},
                            intent="video")
@@ -1059,13 +1079,13 @@ def process_local_command(message: str, prefs=None):
         return make_result(f"{data['indicator']} for {data['country']}: {display} ({data['year']}).",
                            cards=[{"type": "world_bank", **data}], intent="world_bank")
 
-    if "wikipedia" in lower or re.search(r"\b(who is|who was|tell me about|explain|what is|what was)\b", lower):
-        # Avoid intercepting everyday "what is the time" / "what is weather".
+    if re.search(r"\b(wikipedia|wiki)\b", lower):
+        # Keep general questions for the conversational AI; only explicit
+        # encyclopedia requests should be intercepted by the local wiki tool.
         query = extract_subject(text, [
             r"\b(?:wikipedia|wiki)\s+(?:article\s+)?(?:about\s+)?(.+)$",
-            r"\b(?:tell me about|explain|who is|who was|what is|what was|define)\s+(.+)$",
         ])
-        if query and query.lower() not in ("the time", "the date", "the weather"):
+        if query:
             return handle_wikipedia(text)
 
     if "news" in lower or "headlines" in lower or "what's happening" in lower or "whats happening" in lower:
@@ -1182,22 +1202,38 @@ def process_local_command(message: str, prefs=None):
     if lower.startswith("search ") or lower.startswith("google "):
         query = text.split(" ", 1)[1].strip()
         return make_result(f"Searching the web for {query}.",
-                           {"type": "open_url", "url": "https://www.google.com/search?q=" + quote_plus(query), "label": "OPEN SEARCH"},
+                           {"type": "open_url", "url": web_search_url(query, prefs.get("search_engine", "google")), "label": "OPEN SEARCH", "auto": True},
                            intent="web_search")
 
     if lower.startswith("open "):
         target = text[5:].strip()
         key = target.lower()
         if key in WEBSITES:
-            return make_result("Opening " + target + ".", {"type": "open_url", "url": WEBSITES[key]}, intent="open")
+            return make_result("Opening " + target + ".", {"type": "open_url", "url": WEBSITES[key], "auto": True}, intent="open")
         if "." in target and " " not in target:
             url = target if target.startswith(("http://", "https://")) else "https://" + target
-            return make_result("Opening " + target + ".", {"type": "open_url", "url": url}, intent="open")
+            return make_result("Opening " + target + ".", {"type": "open_url", "url": url, "auto": True}, intent="open")
         return make_result("I couldn't find a saved shortcut, so here's a web search.",
-                           {"type": "open_url", "url": "https://www.google.com/search?q=" + quote_plus(target)}, intent="open")
+                           {"type": "open_url", "url": "https://www.google.com/search?q=" + quote_plus(target), "auto": True}, intent="open")
 
-    # Smart default: common "show <place>" phrasing becomes a map; otherwise
-    # attempt a Wikipedia lookup for informative queries before optional AI.
+    # A display request for a saved song/video or a named movie must never
+    # start playback; return a normal search link without automatic navigation.
+    display_match = re.match(r"^(?:show me|show|find me|look up)\s+(.+)$", text, flags=re.I)
+    if display_match:
+        query = display_match.group(1).strip()
+        query_key = re.sub(r"[^a-z0-9 ]", "", query.lower()).strip()
+        media_title = any(query_key == name or name in query_key or query_key in name
+                          for name in list(lib["music"]) + list(lib["videos"]) if query_key)
+        media_display = media_title or bool(re.search(r"\b(movie|film|trailer|song|track|album|music video|video)\b", lower))
+        if media_display and not re.search(r"\b(images?|pictures?|photos?)\b", lower):
+            engine = (prefs or {}).get("search_engine", "google")
+            return make_result(
+                f"Here are search results for {query}.",
+                {"type": "open_url", "url": web_search_url(query, engine), "label": "VIEW SEARCH RESULTS", "auto": False},
+                intent="web_search",
+            )
+
+    # Smart default: common "show <place>" phrasing becomes a map.
     if re.match(r"^show\s+(?:me\s+)?[a-z]", lower):
         return handle_map(text)
     return None
@@ -1213,9 +1249,14 @@ def home():
 
 @app.get("/api/status")
 def status():
+    server_provider = str(get_config("AI_PROVIDER", "openrouter") or "openrouter").lower().replace("-", "_")
+    server_has_key = bool(get_config("AI_API_KEY"))
+    server_has_endpoint = bool(get_config("AI_API_URL") or server_provider in {"openrouter", "openai", "gemini", "groq"})
     return jsonify({
         "ok": True,
-        "ai_configured": bool((get_config("AI_API_URL") or str(get_config("AI_PROVIDER", "openrouter")).lower() == "openrouter") and get_config("AI_API_KEY") and get_config("AI_MODEL")),
+        # Known providers have built-in endpoint/model defaults; a separate
+        # AI_MODEL environment variable is optional for those providers.
+        "ai_configured": bool(server_has_key and server_has_endpoint),
         "news_configured": bool(get_config("NEWS_API_KEY") and "PASTE" not in get_config("NEWS_API_KEY")),
         "news_fallback": "Google News RSS",
         "music_count": len(load_library()["music"]), "video_count": len(load_library()["videos"]),
@@ -1300,6 +1341,11 @@ def library():
     return jsonify({"ok": True, **load_library()})
 
 
+@app.get("/api/apps")
+def apps_route():
+    return jsonify({"ok": True, "apps": apps_catalog.catalog()})
+
+
 @app.get("/api/apis")
 def api_catalog_route():
     return jsonify({"ok": True, "count": len(API_CATALOG), "items": API_CATALOG})
@@ -1338,22 +1384,131 @@ def chat_route():
     history = payload.get("history", [])
     if not message:
         return jsonify({"ok": False, "error": "Message is empty."}), 400
+    ai = payload.get("ai") if isinstance(payload.get("ai"), dict) else {}
+    integ = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    prefs = payload.get("prefs") if isinstance(payload.get("prefs"), dict) else {}
+
+    # Deterministic requests (weather, maps, images, media, apps, notes, maths,
+    # public data) should never fail just because an optional LLM is unavailable.
     try:
-        local = process_local_command(message, payload.get("prefs") if isinstance(payload.get("prefs"), dict) else None)
+        local = process_local_command(message, prefs)
         if local is not None:
             return jsonify({"ok": True, **local})
     except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as exc:
         return jsonify({"ok": True, **make_result(f"I couldn't complete that lookup: {exc}", intent="error")})
+
+    browser_key = str(ai.get("key") or "").strip()
+    agent_enabled = ai.get("agent", True) is not False
+    if browser_key and agent_enabled:
+        try:
+            integ["contacts"] = prefs.get("contacts") or integ.get("contacts") or {}
+            helpers = {
+                "now": india_now, "local": process_local_command, "load_notes": load_notes, "save_notes": save_notes,
+                "weather": get_weather, "news": fetch_news, "wiki": wikipedia_search,
+                "platform_url": platform_url, "platforms": PLATFORMS,
+            }
+            reply, out = agent.run_agent(message, history, {**ai, "platform": prefs.get("platform", "youtube"), "video_platform": prefs.get("video_platform", "youtube")}, integ, helpers)
+            actions = out.get("actions") or []
+            result = make_result(reply, actions[0] if actions else None, news=out.get("news"), source="agent", intent="agent")
+            result["actions"] = actions
+            result["confirms"] = out.get("confirms", [])
+            result["reminders"] = out.get("reminders", [])
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            app.logger.warning("AXO agent request failed: %s", str(exc)[:240])
+            # If tool calling/model compatibility fails, retry once as ordinary
+            # chat with the same chosen provider and key. Do not mask auth/quota errors.
+            status_code = getattr(exc, "status_code", None)
+            network_unavailable = any(marker in str(exc).lower() for marker in (
+                "could not reach the ai provider", "connectionerror", "connecttimeout", "readtimeout",
+                "private and local ip", "custom api url must use https",
+            ))
+            if status_code not in (401, 402, 403, 429) and not network_unavailable:
+                try:
+                    reply = agent.chat_text(ai, message, history, ai.get("address") or "the user")
+                    return jsonify({"ok": True, **make_result(reply, source="api", intent="conversation")})
+                except Exception as fallback_exc:
+                    app.logger.warning("AXO plain-chat fallback failed: %s", str(fallback_exc)[:240])
+                    exc = fallback_exc
+            detail = str(exc)
+            if "401" in detail:
+                detail = "The API key was rejected (401). Check the key and provider selected in Settings → AI & API."
+            elif "402" in detail:
+                detail = "The provider requires available credits for this model (402). Try a free model or another provider."
+            elif "403" in detail:
+                detail = "The provider denied this request (403). Check account access and model permissions."
+            elif "429" in detail:
+                detail = "The AI provider is rate-limiting this key or its free quota is exhausted (429). Wait for the limit to reset or choose another model."
+            return jsonify({"ok": True, **make_result(f"AXO's AI connection failed: {detail}", intent="error")})
+
+    if browser_key:
+        try:
+            reply = agent.chat_text(ai, message, history, ai.get("address") or "the user")
+            return jsonify({"ok": True, **make_result(reply, source="api", intent="conversation")})
+        except Exception as exc:
+            app.logger.warning("AXO direct chat failed: %s", str(exc)[:240])
+            return jsonify({"ok": True, **make_result(f"AXO's AI connection failed: {str(exc)}", intent="error")})
+
     ai_reply, ai_error = ask_external_ai(message, history)
     if ai_reply:
         return jsonify({"ok": True, **make_result(ai_reply, source="api", intent="conversation")})
-    if ai_error and ai_error != "AI API is not configured.":
-        return jsonify({"ok": True, **make_result(ai_error + "\n\nYour local commands are still available. Type 'help' for examples.", intent="error")})
+    if ai_error:
+        return jsonify({"ok": True, **make_result(
+            ai_error + "\n\nYour local commands and integrations are still available. Add a provider key in Settings → AI & API for open-ended chat.",
+            intent="error",
+        )})
     return jsonify({"ok": True, **make_result(
-        "I can search public data and run local commands, but open-ended conversation needs an optional AI provider. "
-        "Try a direct request such as weather, Wikipedia, images, maps, news, earthquakes, books or GitHub.",
+        "I can run local commands and connected integrations. Add an AI provider key in Settings → AI & API for open-ended conversation.",
         intent="help",
     )})
+
+
+@app.post("/api/models")
+def models_route():
+    payload = request.get_json(silent=True) or {}
+    ai = payload.get("ai") if isinstance(payload.get("ai"), dict) else {}
+    try:
+        models = agent.list_models(ai)
+        return jsonify({"ok": True, "models": models})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:240]}), 400
+
+
+@app.post("/api/confirm")
+def confirm_route():
+    payload = request.get_json(silent=True) or {}
+    integ = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
+    try:
+        msg = agent.run_confirmed(str(payload.get("kind")), payload.get("payload") or {}, integ)
+        return jsonify({"ok": True, "message": msg})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/test")
+def test_route():
+    payload = request.get_json(silent=True) or {}
+    what = payload.get("what")
+    try:
+        if what == "ai":
+            return jsonify({"ok": True, "message": agent.test_ai(payload.get("ai") or {})})
+        if what == "gmail":
+            agent.read_emails(payload.get("gmail") or {}, 1)
+            return jsonify({"ok": True, "message": "Gmail connected."})
+        if what == "firebase":
+            ov = agent.firebase_overview(payload.get("firebase") or {})
+            return jsonify({"ok": True, "message": f"Connected to {ov['project']} ({len(ov['collections'])} collections)."})
+        if what == "telegram":
+            tg = payload.get("telegram") or {}
+            r = requests.get(f"https://api.telegram.org/bot{tg.get('token','')}/getMe", timeout=15)
+            if not r.ok: raise ValueError("Bot token rejected.")
+            return jsonify({"ok": True, "message": "Bot @" + r.json()["result"]["username"] + " connected."})
+        if what == "github":
+            d = agent.gh(payload.get("github") or {}, "/user")
+            return jsonify({"ok": True, "message": f"Connected as {d.get('login')}."})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+    return jsonify({"ok": False, "error": "Unknown test."}), 400
 
 
 if __name__ == "__main__":
