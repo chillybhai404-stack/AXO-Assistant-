@@ -12,9 +12,12 @@ let busy = false;
 let activeMaps = [];
 let apiCatalog = [];
 let settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN',
-  name: '', address: 'name', customAddress: '', greetShow: true, greetSpeak: true,
-  accent: '#3989f6', fontSize: '100', voiceName: 'en-GB-RyanNeural', voiceRate: -5,
-  autoOpen: true, platform: 'youtube' };
+  name: '', address: 'name', customAddress: '', greetShow: true, greetSpeak: true, greetChime: true,
+  accent: '#3989f6', fontSize: '100', compactMode: false, reduceMotion: false,
+  voiceName: 'en-GB-RyanNeural', voiceRate: -5, autoOpen: true, openTarget: 'new_tab',
+  notifications: true, platform: 'youtube', videoPlatform: 'youtube', searchEngine: 'google',
+  ai: { provider: 'auto', url: '', key: '', model: '', agent: true },
+  gmail: { email: '', password: '' }, github: { token: '' }, firebase: { service_account: '' }, telegram: { token: '', chat: '' }, contactsText: '' };
 const ACCENTS = ['#3989f6', '#a3e635', '#f472b6', '#f59e0b', '#a78bfa', '#22d3ee', '#ef4444'];
 const LOGO_URL = '/static/logo.png';
 let voiceRecognition = null;
@@ -70,6 +73,7 @@ function readSavedData() {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
     settings = { ...settings, ...(stored && typeof stored === 'object' ? stored : {}) };
   } catch { /* keep defaults */ }
+  settings.ai = { provider: 'auto', url: '', key: '', model: '', agent: true, ...(settings.ai || {}) };
   applySettings();
   renderChatHistory();
   if (conversations.length) loadConversation(conversations[0].id);
@@ -175,9 +179,12 @@ function applySettings() {
   if (voiceRecognition) voiceRecognition.lang = settings.voiceLanguage || 'en-IN';
   const set = (id, key, isCheck) => { const el = $(id); if (el) { if (isCheck) el.checked = !!settings[key]; else el.value = settings[key] ?? ''; } };
   set('#nameSetting', 'name'); set('#addressSetting', 'address'); set('#customAddressSetting', 'customAddress');
-  set('#greetShowSetting', 'greetShow', true); set('#greetSpeakSetting', 'greetSpeak', true);
+  set('#greetShowSetting', 'greetShow', true); set('#greetSpeakSetting', 'greetSpeak', true); set('#greetChimeSetting', 'greetChime', true);
   set('#fontSizeSetting', 'fontSize'); set('#voiceNameSetting', 'voiceName'); set('#voiceRateSetting', 'voiceRate');
+  set('#compactSetting', 'compactMode', true); set('#reduceMotionSetting', 'reduceMotion', true);
   set('#autoOpenSetting', 'autoOpen', true); set('#platformSetting', 'platform');
+  set('#videoPlatformSetting', 'videoPlatform'); set('#searchEngineSetting', 'searchEngine'); set('#openTargetSetting', 'openTarget');
+  set('#notificationsSetting', 'notifications', true);
   const cr = $('#customAddressRow'); if (cr) cr.style.display = settings.address === 'custom' ? '' : 'none';
   const rl = $('#rateLabel'); if (rl) { const r = Number(settings.voiceRate) || 0; rl.textContent = r === 0 ? 'Normal' : (r > 0 ? `Faster (+${r}%)` : `Slower (${r}%)`); }
   document.documentElement.style.setProperty('--blue', settings.accent || '#3989f6');
@@ -186,6 +193,16 @@ function applySettings() {
   $$('#accentSwatches button').forEach(b => b.classList.toggle('on', b.dataset.c === settings.accent));
   const gp = $('#greetPreview'); if (gp) gp.textContent = greetingText() + '.';
   const an = $('#accountName'); if (an) an.textContent = settings.name ? settings.name : 'AXO Assistant';
+  const ai = settings.ai || {}, gm = settings.gmail || {}, gh = settings.github || {};
+  const v = (id, val) => { const el = $(id); if (el && document.activeElement !== el) el.value = val ?? ''; };
+  v('#aiProvider', ai.provider); v('#aiUrl', ai.url); v('#aiKey', ai.key); v('#aiModel', ai.model);
+  const ag = $('#aiAgent'); if (ag) ag.checked = ai.agent !== false;
+  const ur = $('#aiUrlRow'); if (ur) ur.style.display = ai.provider === 'custom' ? '' : 'none';
+  document.documentElement.classList.toggle('compact-mode', !!settings.compactMode);
+  document.documentElement.dataset.motion = settings.reduceMotion ? 'reduced' : 'full';
+  const status = $('#apiStatus'); if (status) status.textContent = ai.key ? 'AI KEY SAVED' : 'LOCAL CORE';
+  v('#fbJson', (settings.firebase || {}).service_account); v('#tgToken', (settings.telegram || {}).token); v('#tgChat', (settings.telegram || {}).chat); v('#contactsText', settings.contactsText);
+  v('#gmEmail', gm.email); v('#gmPass', gm.password); v('#ghToken', gh.token);
   renderWelcome();
 }
 function addressName() {
@@ -241,7 +258,7 @@ function addMessage(role, text, extras = null) {
   const avatar = document.createElement('div');
   avatar.className = 'avatar';
   if (role === 'user') avatar.textContent = ((settings.name || 'U').trim()[0] || 'U').toUpperCase();
-  else { avatar.classList.add('logo-avatar'); const img = document.createElement('img'); img.src = LOGO_URL; img.alt = 'AXO'; avatar.append(img); }
+  else { avatar.classList.add('logo-avatar'); const img = document.createElement('img'); img.src = LOGO_URL; img.alt = 'AXO logo'; img.draggable = false; avatar.append(img); }
   const content = document.createElement('div');
   content.className = 'message-content';
   const bubble = document.createElement('div');
@@ -282,14 +299,18 @@ function fallbackSpeak(text) {
   if (!('speechSynthesis' in window)) { setCoreState('idle'); return; }
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = (settings.voiceLanguage || 'en-IN');
-  utterance.rate = 0.94;
+  const chosenVoice = String(settings.voiceName || 'en-GB-RyanNeural');
+  const chosenLocale = chosenVoice.split('-').slice(0, 2).join('-');
+  utterance.lang = chosenLocale || settings.voiceLanguage || 'en-IN';
+  utterance.rate = Math.max(0.7, Math.min(1.3, 0.94 + (Number(settings.voiceRate) || 0) / 100));
   utterance.pitch = 0.88;
   const chooseVoice = () => {
     const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v => v.lang.toLowerCase() === utterance.lang.toLowerCase());
+    const wantedName = chosenVoice.replace(/Neural$/i, '').toLowerCase();
+    const preferred = voices.find(v => v.name.toLowerCase().includes(wantedName.split('-').slice(2).join('-').toLowerCase()) && v.lang.toLowerCase().startsWith(chosenLocale.toLowerCase()));
+    const localeMatch = voices.find(v => v.lang.toLowerCase() === chosenLocale.toLowerCase());
     const british = voices.find(v => /^en-GB/i.test(v.lang));
-    if (preferred || british) utterance.voice = preferred || british;
+    if (preferred || localeMatch || british) utterance.voice = preferred || localeMatch || british;
     utterance.onstart = () => setCoreState('speaking');
     utterance.onend = () => setCoreState('idle');
     utterance.onerror = () => setCoreState('idle');
@@ -314,7 +335,7 @@ async function sendMessage(rawText) {
   const contextHistory = chat.messages.slice(0, -1).filter(item => ['user', 'assistant'].includes(item.role)).slice(-8).map(item => ({ role: item.role, content: item.content }));
   // Open a tab inside the click gesture so the browser doesn't block the redirect later.
   let preWin = null;
-  if (settings.autoOpen !== false && /^\s*(play|watch|listen|open)\b/i.test(message)) {
+  if (settings.autoOpen !== false && /^\s*(play|watch|listen|open|search|google)\b/i.test(message)) {
     try { preWin = window.open('about:blank', '_blank'); } catch { preWin = null; }
   }
   const assistantHandle = addMessage('assistant', 'Thinking…');
@@ -323,7 +344,8 @@ async function sendMessage(rawText) {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform } })
+      body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform, video_platform: settings.videoPlatform, search_engine: settings.searchEngine || 'google', contacts: contactsMap() },
+        ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() })
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || 'The request failed.');
@@ -331,21 +353,41 @@ async function sendMessage(rawText) {
     assistantHandle.bubble.textContent = reply;
     assistantHandle.bubble.classList.remove('thinking');
     const extras = {};
-    ['action', 'news', 'images', 'map', 'cards', 'source', 'intent'].forEach(key => {
+    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'source', 'intent'].forEach(key => {
       if (data[key] !== undefined) extras[key] = (key === 'images' ? data[key].slice(0, 12) : key === 'news' ? data[key].slice(0, 10) : data[key]);
     });
     chat.messages.push({ role: 'assistant', content: reply, extras, createdAt: Date.now() });
     chat.updatedAt = Date.now();
     persistConversations();
     renderIntelligence(extras, assistantHandle.richHost);
-    const mediaUrl = safeHttpUrl(data.action?.url);
-    if (data.action?.auto && settings.autoOpen !== false && mediaUrl) {
-      let opened = false;
-      if (preWin && !preWin.closed) { try { preWin.location.href = mediaUrl; opened = true; } catch { opened = false; } }
-      if (!opened) { const w = window.open(mediaUrl, '_blank'); opened = !!w; }
-      if (!opened) toast('Your browser blocked the pop-up — tap the link below.');
-      preWin = null;
-    } else if (data.action?.url) toast('Link ready.');
+    (data.reminders || []).forEach(scheduleReminder);
+    const actions = Array.isArray(data.actions) && data.actions.length ? data.actions : (data.action ? [data.action] : []);
+    const autoAction = actions.find(x => x && x.auto === true);
+    if (settings.autoOpen !== false && autoAction) {
+      if (autoAction.type === 'open_app') {
+        if (preWin && !preWin.closed) { try { preWin.close(); } catch { /* ignore */ } }
+        preWin = null;
+        setTimeout(() => { if (!launchApp(autoAction)) toast('This app could not be opened here.'); }, 180);
+      } else {
+        const targetUrl = safeHttpUrl(autoAction.url);
+        if (targetUrl) {
+          let opened = false;
+          if (settings.openTarget === 'same_tab') {
+            if (preWin && !preWin.closed) { try { preWin.close(); } catch { /* ignore */ } }
+            preWin = null;
+            window.location.assign(targetUrl);
+            opened = true;
+          } else {
+            if (preWin && !preWin.closed) { try { preWin.location.href = targetUrl; opened = true; } catch { opened = false; } }
+            if (!opened) { const w = window.open(targetUrl, '_blank', 'noopener,noreferrer'); opened = !!w; }
+            preWin = null;
+          }
+          if (!opened) toast('Your browser blocked the new tab — tap the link shown below.');
+        }
+      }
+    } else if (actions.some(a => a?.url)) {
+      toast('Link ready.');
+    }
     if (preWin && !preWin.closed) { try { preWin.close(); } catch { /* ignore */ } }
     if (settings.voiceReplies) speak(reply);
     else setCoreState('idle');
@@ -388,6 +430,69 @@ function addText(parent, text, className) {
   el.textContent = text ?? '';
   parent.append(el);
   return el;
+}
+function contactsMap() {
+  const out = {};
+  String(settings.contactsText || '').split('\n').forEach(line => { const i = line.indexOf(':'); if (i > 0) { const k = line.slice(0, i).trim().toLowerCase(), v = line.slice(i + 1).trim(); if (k && v) out[k] = v; } });
+  return out;
+}
+function integrationsPayload() {
+  return { gmail: settings.gmail || {}, github: settings.github || {}, firebase: settings.firebase || {}, telegram: settings.telegram || {}, contacts: contactsMap() };
+}
+const SAFE_SCHEME = /^(intent|tel|sms|mailto|geo|https?|whatsapp|tg|vnd\.youtube|fb|instagram|twitter|spotify|googlegmail|comgooglemaps|nflx|snapchat|linkedin|reddit|snssdk1233|clock-alarm|calshow|photos-redirect|music|github|googlechrome|App-Prefs):/i;
+function appTarget(a) {
+  const ua = navigator.userAgent;
+  let t = /Android/i.test(ua) ? a.uri : (/iPhone|iPad|iPod/i.test(ua) ? (a.ios || a.web) : a.web);
+  if (/^(tel|sms|whatsapp|https):/i.test(a.uri) && !/^intent/i.test(a.uri)) t = a.uri;
+  return SAFE_SCHEME.test(t || '') ? t : '';
+}
+function launchApp(a) {
+  const t = appTarget(a); if (!t) return false;
+  if (/^https?:/i.test(t)) { return !!window.open(t, '_blank'); }
+  window.location.href = t; return true;
+}
+function appLogo(a) {
+  const box = document.createElement('span'); box.className = 'app-logo';
+  const icon = a.icon || '';
+  if (/^[a-z0-9]+$/i.test(icon) && icon.length > 2) {
+    const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy';
+    img.src = `https://cdn.simpleicons.org/${icon}/${a.color || 'ffffff'}`;
+    img.onerror = () => { box.textContent = (a.name || '?')[0]; };
+    box.append(img);
+  } else box.textContent = icon || (a.name || '?')[0];
+  return box;
+}
+function renderConfirm(c, host) {
+  const card = document.createElement('div'); card.className = 'confirm-card';
+  const title = document.createElement('strong'); title.textContent = c.summary || 'Confirm action';
+  const pre = document.createElement('pre');
+  const p = c.payload || {};
+  pre.textContent = c.kind === 'telegram' ? (p.text || '') : c.kind === 'email' ? `To: ${p.to}\nSubject: ${p.subject}\n\n${p.body}` : `${p.title}\n\n${p.body || ''}`;
+  const row = document.createElement('div'); row.className = 'confirm-actions';
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'go'; go.textContent = c.kind === 'github_issue' ? 'Create' : 'Send';
+  const no = document.createElement('button'); no.type = 'button'; no.textContent = 'Cancel';
+  go.addEventListener('click', async () => {
+    go.disabled = no.disabled = true; go.textContent = 'Working…';
+    try {
+      const res = await fetch('/api/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: c.kind, payload: p, integrations: integrationsPayload() }) });
+      const d = await res.json(); if (!res.ok || !d.ok) throw new Error(d.error || 'Failed');
+      row.textContent = '✓ ' + d.message; toast(d.message);
+    } catch (error) { row.textContent = '✗ ' + error.message; }
+  });
+  no.addEventListener('click', () => { row.textContent = 'Cancelled.'; });
+  row.append(go, no); card.append(title, pre, row); host.append(card);
+}
+function scheduleReminder(r) {
+  const ms = Math.max(1000, Number(r.minutes) * 60000);
+  if (settings.notifications) {
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* ignore */ }
+  }
+  setTimeout(() => {
+    toast(`⏰ ${r.text}`);
+    try { if (settings.notifications && 'Notification' in window && Notification.permission === 'granted') new Notification('AXO reminder', { body: r.text, icon: LOGO_URL }); } catch { /* ignore */ }
+    speak(`Reminder: ${r.text}`);
+  }, ms);
 }
 function safeHttpUrl(value) {
   try {
@@ -444,13 +549,23 @@ function renderIntelligence(data, host) {
   if (Array.isArray(data.images) && data.images.length) { renderImageBlock(data.images, host); blocks++; }
   (data.cards || []).forEach(card => { renderDataCard(card, host); blocks++; });
   if (Array.isArray(data.news) && data.news.length) { renderNewsBlock(data.news, host); blocks++; }
-  if (data.action?.url && !blocks) {
+  const acts = Array.isArray(data.actions) && data.actions.length ? data.actions : (data.action ? [data.action] : []);
+  if (acts.length && (!blocks || acts.length > 1)) {
     const block = resultBlock('LINK', data.intent || 'ACTION');
     const body = document.createElement('div'); body.className = 'result-body';
-    addText(body, 'Open this link:', 'result-text');
-    addLink(body, data.action.url, data.action.label || 'OPEN');
+    addText(body, acts.length > 1 ? 'Opened / ready links:' : 'Open this link:', 'result-text');
+    acts.forEach(a => {
+      if (a?.type === 'open_app') {
+        const t = appTarget(a); if (!t) return;
+        const el = document.createElement('a'); el.className = 'result-link app-link'; el.href = t;
+        el.append(appLogo(a), document.createTextNode(a.label || 'OPEN'));
+        el.addEventListener('click', ev => { ev.preventDefault(); launchApp(a); });
+        body.append(el);
+      } else if (a?.url) addLink(body, a.url, a.label || 'OPEN');
+    });
     block.append(body); host.append(block); blocks++;
   }
+  (data.confirms || []).forEach(c => renderConfirm(c, host));
 }
 
 function renderImageBlock(images, host) {
@@ -665,6 +780,7 @@ function showPanel(name) {
   $('#sidebarScrim')?.classList.remove('visible');
   if (name === 'news') loadNews('general');
   if (name === 'apis') loadApis();
+  if (name === 'apps') loadApps();
   if (name === 'music') loadLibrary('music');
   if (name === 'videos') loadLibrary('videos');
   if (name === 'notes') loadNotes();
@@ -706,10 +822,24 @@ async function loadStatus() {
     const response = await fetch('/api/status');
     const data = await response.json();
     $('#connectionText').textContent = data.ok ? 'Ready to chat' : 'Backend unavailable';
-    $('#apiStatus').textContent = data.ai_configured ? 'AI CONNECTED' : 'LOCAL CORE';
+    $('#apiStatus').textContent = (settings.ai || {}).key ? 'AI KEY SAVED' : (data.ai_configured ? 'SERVER AI' : 'LOCAL CORE');
   } catch { $('#connectionText').textContent = 'Backend unavailable'; }
 }
 
+async function loadApps() {
+  const grid = $('#appsGrid'); if (grid.dataset.loaded) return;
+  try {
+    const d = await (await fetch('/api/apps')).json();
+    grid.innerHTML = '';
+    d.apps.forEach(a => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'app-tile';
+      b.append(appLogo(a), document.createTextNode(a.name));
+      b.addEventListener('click', () => { if (!launchApp(a)) toast('Could not open that app here.'); });
+      grid.append(b);
+    });
+    grid.dataset.loaded = '1';
+  } catch { grid.innerHTML = '<div class="empty-state">Could not load apps.</div>'; }
+}
 async function loadLibrary(type) {
   const container = type === 'music' ? $('#musicGrid') : $('#videosGrid');
   container.innerHTML = '<div class="empty-state">Loading library…</div>';
@@ -905,20 +1035,75 @@ const bind = (id, key, opts = {}) => {
 };
 bind('#nameSetting', 'name'); bind('#addressSetting', 'address'); bind('#customAddressSetting', 'customAddress');
 bind('#greetShowSetting', 'greetShow', { check: true }); bind('#greetSpeakSetting', 'greetSpeak', { check: true });
+bind('#greetChimeSetting', 'greetChime', { check: true });
 bind('#fontSizeSetting', 'fontSize'); bind('#voiceNameSetting', 'voiceName'); bind('#voiceRateSetting', 'voiceRate', { num: true });
+bind('#compactSetting', 'compactMode', { check: true }); bind('#reduceMotionSetting', 'reduceMotion', { check: true });
 bind('#autoOpenSetting', 'autoOpen', { check: true }); bind('#platformSetting', 'platform');
+bind('#videoPlatformSetting', 'videoPlatform'); bind('#searchEngineSetting', 'searchEngine'); bind('#openTargetSetting', 'openTarget');
+bind('#notificationsSetting', 'notifications', { check: true });
 ACCENTS.forEach(color => {
   const b = document.createElement('button'); b.type = 'button'; b.dataset.c = color; b.style.background = color; b.setAttribute('aria-label', color);
   b.addEventListener('click', () => { settings.accent = color; saveSettings(); applySettings(); });
   $('#accentSwatches')?.append(b);
 });
-$('#greetTest')?.addEventListener('click', () => playGreeting());
+const nested = (id, group, key, check) => {
+  const el = $(id); if (!el) return;
+  el.addEventListener(check ? 'change' : 'input', () => {
+    settings[group] = { ...(settings[group] || {}), [key]: check ? el.checked : el.value.trim() };
+    saveSettings(); applySettings();
+  });
+};
+nested('#aiProvider', 'ai', 'provider'); nested('#aiUrl', 'ai', 'url'); nested('#aiKey', 'ai', 'key');
+nested('#aiModel', 'ai', 'model'); nested('#aiAgent', 'ai', 'agent', true);
+nested('#fbJson', 'firebase', 'service_account'); nested('#tgToken', 'telegram', 'token'); nested('#tgChat', 'telegram', 'chat');
+$('#contactsText')?.addEventListener('input', e => { settings.contactsText = e.target.value; saveSettings(); });
+nested('#gmEmail', 'gmail', 'email'); nested('#gmPass', 'gmail', 'password'); nested('#ghToken', 'github', 'token');
+$$('[data-test]').forEach(b => b.addEventListener('click', async () => {
+  const what = b.dataset.test, msgEl = $(`#${what === 'ai' ? 'aiTestMsg' : what + 'TestMsg'}`);
+  msgEl.textContent = 'Testing…';
+  try {
+    const res = await fetch('/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ what, ai: settings.ai, gmail: settings.gmail, github: settings.github, firebase: settings.firebase, telegram: settings.telegram }) });
+    const d = await res.json(); msgEl.textContent = res.ok && d.ok ? '✓ ' + d.message : '✗ ' + (d.error || 'Failed');
+  } catch (error) { msgEl.textContent = '✗ ' + error.message; }
+}));
+$('#fetchModels')?.addEventListener('click', async () => {
+  const button = $('#fetchModels'), label = $('#modelFetchMsg');
+  button.disabled = true; label.textContent = 'Fetching…';
+  try {
+    const response = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ai: settings.ai || {} }) });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Could not fetch models.');
+    const models = data.models || [];
+    const list = $('#aiModels');
+    if (list) {
+      list.innerHTML = '';
+      models.forEach(model => { const option = document.createElement('option'); option.value = model; list.append(option); });
+    }
+    label.textContent = models.length ? `${models.length} model IDs found. Choose from the Model ID field.` : 'No models were returned.';
+    const current = String(settings.ai?.model || '').trim();
+    if (!current && models.length) {
+      const preferred = models.find(x => /openrouter\/free|gpt-oss-20b|gemini-3\.8-flash|gpt-4o-mini/i.test(x)) || models[0];
+      settings.ai = { ...(settings.ai || {}), model: preferred };
+      saveSettings(); applySettings();
+      label.textContent = `${models.length} models found. Selected ${preferred}.`;
+    }
+    if (models.length) {
+      label.title = models.slice(0, 30).join(' · ');
+      toast('Model list loaded. Choose a model from the field suggestions.');
+    }
+  } catch (error) { label.textContent = '✗ ' + error.message; }
+  finally { button.disabled = false; }
+});
 $('#resetSettings')?.addEventListener('click', () => {
   if (!confirm('Reset all settings to defaults? Your name is kept.')) return;
-  const keep = { name: settings.name, address: settings.address, customAddress: settings.customAddress };
+  const keep = { name: settings.name, address: settings.address, customAddress: settings.customAddress, ai: settings.ai, gmail: settings.gmail, github: settings.github, firebase: settings.firebase, telegram: settings.telegram, contactsText: settings.contactsText };
   try { localStorage.removeItem(SETTINGS_STORAGE_KEY); } catch { /* ignore */ }
-  settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN', greetShow: true, greetSpeak: true,
-    accent: '#3989f6', fontSize: '100', voiceName: 'en-GB-RyanNeural', voiceRate: -5, autoOpen: true, platform: 'youtube', ...keep };
+  settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLanguage: 'en-IN', greetShow: true, greetSpeak: true, greetChime: true,
+    accent: '#3989f6', fontSize: '100', compactMode: false, reduceMotion: false,
+    voiceName: 'en-GB-RyanNeural', voiceRate: -5, autoOpen: true, openTarget: 'new_tab', notifications: true,
+    platform: 'youtube', videoPlatform: 'youtube', searchEngine: 'google', ...keep };
   saveSettings(); applySettings(); toast('Settings reset.');
 });
 $('#forgetName')?.addEventListener('click', () => {
@@ -942,6 +1127,66 @@ $$('.lib-form').forEach(form => form.addEventListener('submit', async event => {
   } catch (error) { toast(error.message); }
 }));
 
+// ---------- service shortcuts and local data backup ----------
+$$('[data-service]').forEach(button => button.addEventListener('click', () => {
+  const url = safeHttpUrl(button.dataset.service);
+  if (!url) return;
+  if (settings.openTarget === 'same_tab') window.location.assign(url);
+  else if (!window.open(url, '_blank', 'noopener,noreferrer')) toast('Your browser blocked the new tab.');
+}));
+function downloadJson(filename, value) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('#exportChats')?.addEventListener('click', () => {
+  persistConversations();
+  downloadJson(`axo-chats-${new Date().toISOString().slice(0,10)}.json`, { format: 'axo-conversations-v1', exportedAt: new Date().toISOString(), conversations });
+  toast('Conversation backup exported.');
+});
+$('#importChats')?.addEventListener('click', () => $('#importChatsFile')?.click());
+$('#importChatsFile')?.addEventListener('change', async event => {
+  const file = event.target.files?.[0]; if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const incoming = Array.isArray(data) ? data : data.conversations;
+    if (!Array.isArray(incoming)) throw new Error('This file does not contain an AXO conversations array.');
+    const valid = incoming.filter(item => item && typeof item.id === 'string' && Array.isArray(item.messages));
+    if (!valid.length) throw new Error('No valid conversations were found in that file.');
+    const byId = new Map(conversations.map(item => [item.id, item]));
+    valid.forEach(item => byId.set(item.id, item));
+    conversations = [...byId.values()].sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0,40);
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(conversations));
+    if (activeConversation) activeConversation = conversations.find(item => item.id === activeConversation.id) || activeConversation;
+    renderChatHistory();
+    if (conversations.length) loadConversation(conversations[0].id);
+    toast(`Imported ${valid.length} conversations.`);
+  } catch (error) { toast(error.message || 'Could not import this file.'); }
+  finally { event.target.value = ''; }
+});
+$('#exportPreferences')?.addEventListener('click', () => {
+  const safe = JSON.parse(JSON.stringify(settings));
+  if (safe.ai) delete safe.ai.key;
+  if (safe.gmail) delete safe.gmail.password;
+  if (safe.github) delete safe.github.token;
+  if (safe.firebase) delete safe.firebase.service_account;
+  if (safe.telegram) delete safe.telegram.token;
+  downloadJson(`axo-preferences-${new Date().toISOString().slice(0,10)}.json`, { format: 'axo-preferences-v1', settings: safe });
+  toast('Preferences exported without credentials.');
+});
+$('#clearCredentials')?.addEventListener('click', () => {
+  if (!confirm('Remove all saved API keys, email passwords and integration tokens from this browser?')) return;
+  settings.ai = { provider: settings.ai?.provider || 'auto', url: settings.ai?.url || '', model: settings.ai?.model || '', agent: settings.ai?.agent !== false, key: '' };
+  settings.gmail = { email: settings.gmail?.email || '', password: '' };
+  settings.github = { token: '' }; settings.firebase = { service_account: '' };
+  settings.telegram = { token: '', chat: settings.telegram?.chat || '' };
+  saveSettings(); applySettings();
+  $('#aiTestMsg').textContent = 'Connection keys cleared.';
+  toast('Saved connection keys cleared.');
+});
+
 // ---------- onboarding + spoken greeting ----------
 function openOnboarding() {
   const box = $('#onboard'); box.classList.add('open'); box.setAttribute('aria-hidden', 'false');
@@ -951,38 +1196,67 @@ let onboardAddress = 'name';
 $$('#onboardTitle button').forEach(b => b.addEventListener('click', () => {
   onboardAddress = b.dataset.v; $$('#onboardTitle button').forEach(x => x.classList.toggle('on', x === b));
 }));
+function playWelcomeChime() {
+  if (!settings.greetChime) return false;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+    const context = new AudioContextClass();
+    if (context.state === 'suspended') { context.close().catch(() => {}); return false; }
+    const now = context.currentTime;
+    [523.25, 659.25, 783.99].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const start = now + index * 0.13;
+      oscillator.type = 'sine'; oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.075, start + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
+      oscillator.connect(gain); gain.connect(context.destination);
+      oscillator.start(start); oscillator.stop(start + 0.44);
+    });
+    setTimeout(() => context.close().catch(() => {}), 850);
+    return true;
+  } catch { return false; }
+}
+function playGreeting() {
+  const text = `${greetingText()}. How can I help?`;
+  playWelcomeChime();
+  if (settings.greetSpeak) fallbackSpeak(text);
+}
 function finishOnboarding() {
   const name = $('#onboardName').value.trim();
   if (!name) { $('#onboardName').focus(); return; }
   settings.name = name.slice(0, 30); settings.address = onboardAddress; settings.onboarded = true;
   saveSettings(); applySettings();
   const box = $('#onboard'); box.classList.remove('open'); box.setAttribute('aria-hidden', 'true');
-  if (settings.greetSpeak) playGreeting(); // inside a tap, so audio is allowed
+  playGreeting(); // this happens in the user's Continue tap, so audio is permitted
 }
 $('#onboardGo')?.addEventListener('click', finishOnboarding);
 $('#onboardName')?.addEventListener('keydown', e => { if (e.key === 'Enter') finishOnboarding(); });
-
-// returns 'ok' | 'blocked' | 'fail'
-async function playGreeting() {
-  const text = `${greetingText()}. How can I help?`;
-  try {
-    if (axuAudio) { axuAudio.pause(); axuAudio = null; }
-    const response = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: settings.voiceName, rate: Number(settings.voiceRate) || 0 }) });
-    if (!response.ok) throw new Error('tts');
-    const url = URL.createObjectURL(await response.blob());
-    axuAudio = new Audio(url);
-    axuAudio.onended = () => { URL.revokeObjectURL(url); axuAudio = null; };
-    try { await axuAudio.play(); return 'ok'; } catch { axuAudio = null; return 'blocked'; }
-  } catch { fallbackSpeak(text); return 'fail'; }
-}
-let greetDone = false;
-async function startGreeting() {
-  if (!settings.name || !settings.greetSpeak) return;
-  const result = await playGreeting();
-  if (result !== 'blocked') return;
-  const once = () => { if (greetDone) return; greetDone = true; playGreeting(); };
-  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, once, { once: true }));
+$('#greetTest')?.addEventListener('click', playGreeting);
+let greetingPlayedThisView = false;
+function startGreeting() {
+  if (!settings.name || greetingPlayedThisView) return;
+  greetingPlayedThisView = true;
+  if (settings.greetChime || settings.greetSpeak) {
+    // Browsers may block sound on page load. Try once, then unlock on the
+    // first deliberate tap/key without repeatedly greeting during navigation.
+    let unlocked = playWelcomeChime();
+    if (settings.greetSpeak && 'speechSynthesis' in window) {
+      fallbackSpeak(`${greetingText()}. How can I help?`);
+    }
+    let pending = !unlocked || (settings.greetSpeak && !window.speechSynthesis?.speaking);
+    if (pending) {
+      const unlock = () => {
+        if (!pending) return;
+        pending = false;
+        playWelcomeChime();
+        if (settings.greetSpeak) fallbackSpeak(`${greetingText()}. How can I help?`);
+      };
+      ['pointerdown', 'keydown', 'touchstart'].forEach(type => document.addEventListener(type, unlock, { once: true }));
+    }
+  }
 }
 
 readSavedData();

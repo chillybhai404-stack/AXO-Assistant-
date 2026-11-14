@@ -162,3 +162,25 @@ html[data-theme="light"] .topbar{background:rgba(255,255,255,.93)}html[data-them
 .onboard-go{padding:14px;border:0;border-radius:14px;background:#fff;color:#000;font-weight:600;font-size:15px}
 .lib-form{flex-wrap:wrap}.lib-form .lib-name{flex:0 1 150px}.lib-form .lib-url{flex:1 1 200px}.library-card{position:relative}.lib-del{position:absolute;top:8px;right:8px;width:26px;height:26px;border:0;border-radius:50%;background:#ffffff14;color:var(--soft);font-size:14px;line-height:1}
 .welcome-screen h1.greeting{font-size:32px}
+
+.int-h{margin:20px 0 4px;font-size:13px;color:var(--muted);font-weight:600}
+.confirm-card{border:1px solid var(--line);border-radius:14px;padding:13px;margin-top:8px;background:var(--surface)}.confirm-card strong{display:block;font-size:13px;margin-bottom:6px}.confirm-card pre{white-space:pre-wrap;word-break:break-word;margin:0 0 10px;font:12px/1.5 inherit;color:var(--soft);max-height:220px;overflow:auto}
+.confirm-actions{display:flex;gap:8px}.confirm-actions button{padding:8px 16px;border-radius:18px;border:1px solid var(--line);background:var(--surface-2);font-size:12px}.confirm-actions .go{background:var(--blue);border-color:var(--blue);color:#fff}
+
+.apps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:14px}.app-tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text);font-size:11px}.app-tile:active{transform:scale(.96)}
+.app-logo{width:38px;height:38px;display:grid;place-items:center;font-size:28px}.app-logo img{width:34px;height:34px}.app-link{display:inline-flex;align-items:center;gap:8px}.app-link .app-logo{width:20px;height:20px;font-size:16px}.app-link .app-logo img{width:18px;height:18px}
+.setting-row.stack{flex-direction:column;align-items:stretch}.setting-row textarea,.big-area{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font:12px/1.5 monospace;resize:vertical}
+
+/* AXO settings extensions */
+.service-shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin:12px 0 18px}
+.service-shortcuts button{min-height:40px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font-size:12px;text-align:left}
+.service-shortcuts button:active{transform:scale(.98)}
+#sec-ai .setting-row input:not([type=checkbox]){width:min(270px,45%);max-width:270px}
+#sec-ai .setting-row select{max-width:270px;min-width:170px}
+#fetchModels:disabled{opacity:.55;cursor:wait}
+html.compact-mode .chat-window{gap:16px}
+html.compact-mode .message{gap:8px}
+html.compact-mode .assistant-message .bubble{line-height:1.55}
+html.compact-mode .chat-scroll-area{padding-top:14px;padding-bottom:10px}
+html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-motion="reduced"] *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+@media(max-width:760px){#sec-ai .setting-row input:not([type=checkbox]),#sec-ai .setting-row select{width:48%;min-width:0;max-width:48%}.service-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}}
