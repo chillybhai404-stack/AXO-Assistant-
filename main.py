@@ -30,6 +30,7 @@ from api_catalog import API_CATALOG
 
 BASE_DIR = Path(__file__).resolve().parent
 NOTES_FILE = BASE_DIR / "notes.json"
+LIBRARY_FILE = BASE_DIR / "library.json"
 app = Flask(__name__)
 SESSION = requests.Session()
 SESSION.headers.update({
@@ -54,6 +55,78 @@ def india_now():
         return datetime.now(ZoneInfo("Asia/Kolkata"))
     except Exception:
         return datetime.now()
+
+
+# ---------------------------------------------------------------------------
+# Editable media library (saved in library.json, defaults come from the .py files)
+# ---------------------------------------------------------------------------
+def load_library():
+    lib = {"music": dict(musicLibrary.music), "videos": dict(videosLibrary.videos)}
+    try:
+        data = json.loads(LIBRARY_FILE.read_text(encoding="utf-8"))
+        for kind in ("music", "videos"):
+            extra = data.get(kind, {})
+            if isinstance(extra, dict):
+                lib[kind].update({str(k).lower(): str(v) for k, v in extra.items()})
+        for kind in ("music", "videos"):
+            for gone in data.get("deleted_" + kind, []):
+                lib[kind].pop(gone, None)
+    except Exception:
+        pass
+    return lib
+
+
+def save_library_item(kind, name, url=None):
+    try:
+        data = json.loads(LIBRARY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data.setdefault(kind, {})
+    data.setdefault("deleted_" + kind, [])
+    if url is None:  # delete
+        data[kind].pop(name, None)
+        if name not in data["deleted_" + kind]:
+            data["deleted_" + kind].append(name)
+    else:
+        data[kind][name] = url
+        if name in data["deleted_" + kind]:
+            data["deleted_" + kind].remove(name)
+    LIBRARY_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+PLATFORMS = {
+    "youtube": ("https://www.youtube.com/results?search_query={q}", "https://www.youtube.com"),
+    "youtube music": ("https://music.youtube.com/search?q={q}", "https://music.youtube.com"),
+    "facebook": ("https://www.facebook.com/search/videos/?q={q}", "https://www.facebook.com"),
+    "instagram": ("https://www.instagram.com/explore/tags/{qt}/", "https://www.instagram.com"),
+    "spotify": ("https://open.spotify.com/search/{q}", "https://open.spotify.com"),
+    "jiosaavn": ("https://www.jiosaavn.com/search/{q}", "https://www.jiosaavn.com"),
+    "gaana": ("https://gaana.com/search/{q}", "https://gaana.com"),
+    "soundcloud": ("https://soundcloud.com/search?q={q}", "https://soundcloud.com"),
+    "apple music": ("https://music.apple.com/search?term={q}", "https://music.apple.com"),
+    "netflix": ("https://www.netflix.com/search?q={q}", "https://www.netflix.com"),
+    "tiktok": ("https://www.tiktok.com/search?q={q}", "https://www.tiktok.com"),
+    "twitter": ("https://x.com/search?q={q}", "https://x.com"),
+    "x": ("https://x.com/search?q={q}", "https://x.com"),
+    "google": ("https://www.google.com/search?q={q}", "https://www.google.com"),
+    "whatsapp": ("https://web.whatsapp.com", "https://web.whatsapp.com"),
+    "gmail": ("https://mail.google.com", "https://mail.google.com"),
+}
+
+
+def platform_url(platform, query):
+    platform = (platform or "youtube").lower().strip()
+    tpl = PLATFORMS.get(platform, PLATFORMS["youtube"])[0]
+    return tpl.format(q=quote_plus(query), qt=re.sub(r"\W+", "", query))
+
+
+def split_platform(key):
+    """'skyfall on facebook' -> ('skyfall', 'facebook')"""
+    for name in sorted(PLATFORMS, key=len, reverse=True):
+        m = re.search(rf"\s+(?:on|in|at|from|using|via)\s+{re.escape(name)}$", key)
+        if m:
+            return key[:m.start()].strip(), name
+    return key, None
 
 
 def load_notes():
@@ -836,7 +909,7 @@ def handle_wikipedia(text):
     return make_result(data["extract"], cards=[{"type": "wiki", **data}], intent="wikipedia")
 
 
-def process_local_command(message: str):
+def process_local_command(message: str, prefs=None):
     text = message.strip()
     lower = re.sub(r"\s+", " ", text.lower()).strip(" ?!.,;:")
     if not text:
@@ -885,34 +958,55 @@ def process_local_command(message: str):
     # Media shortcuts are deliberately checked before open/search intents.
     media_text = re.sub(r"[!?.,]", " ", lower)
     media_text = re.sub(r"\s+", " ", media_text).strip()
-    music_prefixes = ("play ", "play me ", "play song ", "play the song ", "play track ",
-                      "play the track ", "play music ", "play the music ", "listen to ",
-                      "listen ", "open song ", "open the song ", "open music ", "open the music ")
-    music_key = next((media_text[len(x):].strip() for x in music_prefixes if media_text.startswith(x)), None)
-    if music_key is None and media_text.startswith("open ") and media_text[5:].strip() in musicLibrary.music:
-        music_key = media_text[5:].strip()
-    if music_key is None and media_text in musicLibrary.music:
-        music_key = media_text
-    if music_key is not None:
-        music_key = re.sub(r"^(the song|song|music|the music)\s+", "", music_key).strip()
-        matched = music_key if music_key in musicLibrary.music else next(
-            (name for name in musicLibrary.music if music_key in name or name in music_key), None)
-        if matched:
-            return make_result(f"Found {matched}. Tap below to open it in YouTube.",
-                               {"type": "open_url", "url": musicLibrary.music[matched], "label": f"PLAY {matched.upper()}"},
-                               intent="music")
-        return make_result("I couldn't find that track. Saved tracks: " + ", ".join(musicLibrary.music), intent="music")
+    lib = load_library()
+    prefs = prefs or {}
+    default_platform = str(prefs.get("platform") or "youtube").lower()
 
-    video_prefixes = ("watch ", "watch video ", "watch the video ", "play video ", "video ")
+    # "open youtube" / "open facebook" -> open the site itself
+    site = media_text[5:].strip() if media_text.startswith("open ") else None
+    if site and site in PLATFORMS and site not in lib["music"]:
+        return make_result(f"Opening {site.title()}.",
+                           {"type": "open_url", "url": PLATFORMS[site][1], "label": f"OPEN {site.upper()}", "auto": True},
+                           intent="open")
+
+    music_prefixes = ("play me ", "play song ", "play the song ", "play track ", "play the track ",
+                      "play music ", "play the music ", "play ", "listen to ", "listen ",
+                      "open song ", "open the song ", "open music ", "open the music ")
+    music_key = next((media_text[len(x):].strip() for x in music_prefixes if media_text.startswith(x)), None)
+    if music_key is None and media_text.startswith("open ") and media_text[5:].strip() in lib["music"]:
+        music_key = media_text[5:].strip()
+    if music_key is None and media_text in lib["music"]:
+        music_key = media_text
+    if music_key is not None and not music_key.startswith(("video ", "the video ")):
+        music_key = re.sub(r"^(the song|song|music|the music)\s+", "", music_key).strip()
+        music_key, platform = split_platform(music_key)
+        matched = music_key if music_key in lib["music"] else next(
+            (name for name in lib["music"] if music_key and (music_key in name or name in music_key)), None)
+        if matched and not platform:
+            return make_result(f"Playing {matched}.",
+                               {"type": "open_url", "url": lib["music"][matched], "label": f"PLAY {matched.upper()}", "auto": True},
+                               intent="music")
+        if music_key:
+            target = platform or default_platform
+            q = music_key if platform else music_key + " song"
+            return make_result(f"Playing {music_key} on {target.title()}.",
+                               {"type": "open_url", "url": platform_url(target, q), "label": f"PLAY {music_key.upper()}", "auto": True},
+                               intent="music")
+
+    video_prefixes = ("watch video ", "watch the video ", "play video ", "watch ", "video ")
     video_key = next((media_text[len(x):].strip() for x in video_prefixes if media_text.startswith(x)), None)
-    if video_key is not None:
-        matched = video_key if video_key in videosLibrary.videos else next(
-            (name for name in videosLibrary.videos if video_key in name or name in video_key), None)
-        if matched:
-            return make_result(f"Found {matched}. Tap below to open it.",
-                               {"type": "open_url", "url": videosLibrary.videos[matched], "label": f"WATCH {matched.upper()}"},
+    if video_key is not None and video_key:
+        video_key, platform = split_platform(video_key)
+        matched = video_key if video_key in lib["videos"] else next(
+            (name for name in lib["videos"] if video_key and (video_key in name or name in video_key)), None)
+        if matched and not platform:
+            return make_result(f"Opening {matched}.",
+                               {"type": "open_url", "url": lib["videos"][matched], "label": f"WATCH {matched.upper()}", "auto": True},
                                intent="video")
-        return make_result("I couldn't find that video. Saved videos: " + ", ".join(videosLibrary.videos), intent="video")
+        target = platform or "youtube"
+        return make_result(f"Searching {video_key} on {target.title()}.",
+                           {"type": "open_url", "url": platform_url(target, video_key), "label": f"WATCH {video_key.upper()}", "auto": True},
+                           intent="video")
 
     if re.search(r"\b(species|scientific name|taxonomy|identify species)\b", lower):
         query = extract_subject(text, [r"\b(?:species|taxonomy|scientific name|identify species)\s+(?:of|for)?\s*(.+)$"])
@@ -1124,7 +1218,7 @@ def status():
         "ai_configured": bool((get_config("AI_API_URL") or str(get_config("AI_PROVIDER", "openrouter")).lower() == "openrouter") and get_config("AI_API_KEY") and get_config("AI_MODEL")),
         "news_configured": bool(get_config("NEWS_API_KEY") and "PASTE" not in get_config("NEWS_API_KEY")),
         "news_fallback": "Google News RSS",
-        "music_count": len(musicLibrary.music), "video_count": len(videosLibrary.videos),
+        "music_count": len(load_library()["music"]), "video_count": len(load_library()["videos"]),
         "api_catalog_count": len(API_CATALOG),
         "integrations": ["Open-Meteo", "Wikipedia", "Openverse", "Wikimedia Commons", "NASA Images",
                          "Nominatim", "USGS", "ISS", "Frankfurter", "Nager.Date", "GitHub",
@@ -1158,11 +1252,19 @@ def text_to_speech():
         import edge_tts
 
         async def synthesize():
+            allowed = {"en-GB-RyanNeural", "en-GB-SoniaNeural", "en-IN-PrabhatNeural",
+                       "en-IN-NeerjaNeural", "en-US-GuyNeural", "en-US-JennyNeural"}
+            voice = str(payload.get("voice") or "en-GB-RyanNeural")
+            voice = voice if voice in allowed else "en-GB-RyanNeural"
+            try:
+                rate_pct = max(-40, min(40, int(payload.get("rate", -5))))
+            except (TypeError, ValueError):
+                rate_pct = -5
             communicator = edge_tts.Communicate(
                 text,
-                voice="en-GB-RyanNeural",
-                rate="-5%",
-                pitch="-8Hz",
+                voice=voice,
+                rate=f"{rate_pct:+d}%",
+                pitch="-8Hz" if "Ryan" in voice or "Guy" in voice or "Prabhat" in voice else "+0Hz",
             )
             chunks = []
             async for chunk in communicator.stream():
@@ -1179,9 +1281,23 @@ def text_to_speech():
         return jsonify({"ok": False, "error": "Neural voice is unavailable; use browser voice fallback."}), 503
 
 
-@app.get("/api/library")
+@app.route("/api/library", methods=["GET", "POST", "DELETE"])
 def library():
-    return jsonify({"music": musicLibrary.music, "videos": videosLibrary.videos})
+    if request.method == "GET":
+        return jsonify(load_library())
+    payload = request.get_json(silent=True) or {}
+    kind = "videos" if str(payload.get("type", "")).startswith("video") else "music"
+    name = re.sub(r"\s+", " ", str(payload.get("name", "")).strip().lower())[:60]
+    if not name:
+        return jsonify({"ok": False, "error": "Give it a name."}), 400
+    if request.method == "DELETE":
+        save_library_item(kind, name)
+        return jsonify({"ok": True})
+    url = str(payload.get("url", "")).strip()
+    if not re.match(r"^https?://", url, re.I):
+        return jsonify({"ok": False, "error": "Link must start with http:// or https://"}), 400
+    save_library_item(kind, name, url[:600])
+    return jsonify({"ok": True, **load_library()})
 
 
 @app.get("/api/apis")
@@ -1223,7 +1339,7 @@ def chat_route():
     if not message:
         return jsonify({"ok": False, "error": "Message is empty."}), 400
     try:
-        local = process_local_command(message)
+        local = process_local_command(message, payload.get("prefs") if isinstance(payload.get("prefs"), dict) else None)
         if local is not None:
             return jsonify({"ok": True, **local})
     except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as exc:
