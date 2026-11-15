@@ -18,6 +18,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
+<div id="axoSplash"><div class="sp-in"><span class="ring"></span><span class="ring r2"></span><img src="{{ url_for('static', filename='logo.png') }}" alt=""><h2><span style="animation-delay:.35s">A</span><span style="animation-delay:.5s">X</span><span style="animation-delay:.65s">O</span></h2><p>Your personal assistant</p><div class="bar"><i></i></div></div></div>
+<script>setTimeout(function(){var e=document.getElementById("axoSplash");if(e)e.classList.add("out")},4500)</script>
   <svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -201,6 +203,8 @@
           <label class="setting-row"><span><strong>Show greeting</strong><small>“Good morning, …” on the home screen.</small></span><input id="greetShowSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO. Some browsers need one tap before audio can play.</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Welcome chime</strong><small>Play a soft original sound when AXO greets you.</small></span><input id="greetChimeSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Greeting voice</strong><small>Only Ryan or Sonia speak the welcome. Chat replies keep your normal voice.</small></span><select id="greetVoiceSetting"><option value="en-GB-RyanNeural">Ryan (male)</option><option value="en-GB-SoniaNeural">Sonia (female)</option></select></label>
+          <div class="setting-row"><span><strong>Replay intro tour</strong><small>Arrows showing what everything does.</small></span><button class="pill-button" id="tourReplay" type="button">Replay</button></div>
           <div class="setting-row"><span><strong>Preview greeting</strong><small id="greetPreview"></small></span><button class="pill-button" id="greetTest" type="button">Preview</button></div>
         </section>
         <section class="sp-sec" id="sec-appearance"><h3>Appearance</h3>
@@ -422,5 +426,6 @@
   <script src="{{ url_for('static', filename='extra.js') }}"></script>
   <script src="{{ url_for('static', filename='extra2.js') }}"></script>
   <script src="{{ url_for('static', filename='ui.js') }}"></script>
+  <script src="{{ url_for('static', filename='boost.js') }}"></script>
 </body>
 </html>
