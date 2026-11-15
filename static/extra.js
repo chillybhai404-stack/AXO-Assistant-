@@ -639,4 +639,4 @@ $('#botImportFile')?.addEventListener('change', async ev => {
 
 /* boot */
 renderWelcome();
-window.__axuBoot && window.__axuBoot();
+/* boot now happens in boost.js so the greeting uses the Ryan/Sonia voice */
