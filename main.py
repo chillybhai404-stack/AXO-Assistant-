@@ -1404,7 +1404,7 @@ def _ai_from(payload):
 
 @app.get("/workflow")
 def workflow_page():
-    return render_template("workflow.html")
+    return Response((Path(__file__).parent / "templates" / "workflow.html").read_text(encoding="utf-8"), mimetype="text/html")
 
 
 @app.post("/api/workflow")
@@ -1414,7 +1414,36 @@ def workflow_route():
     if not prompt:
         return jsonify({"ok": False, "error": "Describe the workflow first."}), 400
     ai = p.get("ai") if isinstance(p.get("ai"), dict) else {}
-    return jsonify({"ok": True, **agent.make_workflow(ai, prompt)})
+    try:
+        if p.get("template"):
+            t = agent._wf_templates(str(p["template"]))
+            if t: return jsonify({"ok": True, "title": t[0], "nodes": t[1]})
+        return jsonify({"ok": True, **agent.make_workflow(ai, prompt, p.get("current"), bool(p.get("edit")))})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+
+
+@app.post("/api/workflow/step")
+def workflow_step():
+    p = request.get_json(silent=True) or {}
+    integ = p.get("integrations") if isinstance(p.get("integrations"), dict) else {}
+    ai = p.get("ai") if isinstance(p.get("ai"), dict) else {}
+    try:
+        out, branch = agent.run_wf_step(p.get("node") or {}, str(p.get("ctx", ""))[:4000], integ, ai)
+        return jsonify({"ok": True, "output": out, "branch": branch})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:220]})
+
+
+@app.post("/api/make-file")
+def make_file_route():
+    p = request.get_json(silent=True) or {}
+    try:
+        import base64
+        name, data, mime = agent.make_file(_ai_from(p), "sheet" if p.get("kind") == "sheet" else "doc", str(p.get("prompt", ""))[:600])
+        return jsonify({"ok": True, "name": name, "mime": mime, "b64": base64.b64encode(data).decode()})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
 
 
 @app.post("/api/vision")

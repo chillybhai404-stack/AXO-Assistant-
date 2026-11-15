@@ -9,6 +9,8 @@ import email
 import imaplib
 import json
 import re
+import time
+import requests
 import smtplib
 import ipaddress
 from email.header import decode_header, make_header
@@ -1107,42 +1109,150 @@ def test_ai(ai):
 
 # ---------------- Workflow chart builder ----------------
 _WF_ICONS = "calendar mail database webhook check bolt filter bell file user chat code cloud clock sheet ai globe"
+_WF_KINDS = "trigger email telegram sheet webhook ai log wait condition notify end"
+
+
+def _wf_templates(name):
+    n = lambda i, t, ic, ti, sub="", nx=None, kind="notify", cfg=None, labels=None: {"id": i, "type": t, "icon": ic, "title": ti, "sub": sub, "next": nx or [], "kind": kind, "cfg": cfg or {}, "labels": labels or []}
+    T = {
+        "mail": ("Mail Digest", [n("n1", "trigger", "calendar", "Schedule Trigger", "every morning", ["n2"], "trigger"),
+            n("n2", "condition", "filter", "Check Unread Mail", "", ["n3", "n4"], "condition", {"condition": "unread>0"}, ["Yes", "No"]),
+            n("n3", "action", "mail", "Send Email Digest", "to yourself", ["n5"], "email", {"to": "", "subject": "Your mail digest", "body": "{{ctx}}"}),
+            n("n4", "action", "database", "Log to Database", "", [], "log", {"text": "No unread mail"}),
+            n("n5", "end", "check", "Update System Status", "", [], "log", {"text": "Digest sent"})]),
+        "report": ("Daily Report", [n("n1", "trigger", "calendar", "Schedule Trigger", "every evening", ["n2"], "trigger"),
+            n("n2", "action", "ai", "AI Write Summary", "", ["n3"], "ai", {"prompt": "Write a short daily report for my work day."}),
+            n("n3", "action", "mail", "Email Report", "", ["n4"], "email", {"to": "", "subject": "Daily report", "body": "{{ctx}}"}),
+            n("n4", "end", "check", "Done", "", [], "log", {"text": "Report sent"})]),
+        "orders": ("Order Alerts", [n("n1", "trigger", "bolt", "New Order", "webhook or schedule", ["n2"], "trigger"),
+            n("n2", "condition", "filter", "Order Over 1000?", "", ["n3", "n4"], "condition", {"condition": "always"}, ["Yes", "No"]),
+            n("n3", "action", "chat", "Telegram Alert", "", ["n5"], "telegram", {"text": "Big order received: {{ctx}}"}),
+            n("n4", "action", "sheet", "Add Row to Sheet", "", ["n5"], "sheet", {"values": "{{ctx}}"}),
+            n("n5", "end", "check", "Done", "", [], "log", {"text": "Order handled"})]),
+        "telegram": ("Telegram Bot Replies", [n("n1", "trigger", "chat", "Message Received", "from Telegram", ["n2"], "trigger"),
+            n("n2", "action", "ai", "AI Draft Reply", "", ["n3"], "ai", {"prompt": "Write a friendly short reply to this message."}),
+            n("n3", "action", "chat", "Send Telegram Reply", "", ["n4"], "telegram", {"text": "{{ctx}}"}),
+            n("n4", "end", "check", "Done", "", [], "log", {"text": "Replied"})]),
+    }
+    return T.get(name)
 
 
 def _wf_fallback(prompt):
     p = (prompt or "").lower()
-    mail = any(k in p for k in ("mail", "email", "inbox", "gmail"))
-    trig = ("calendar", "Schedule Trigger", "every morning") if any(k in p for k in ("morning", "daily", "every", "schedule")) else (("mail", "New Email Arrives", "inbox watcher") if mail else ("bolt", "Start Trigger", "manual or event"))
-    nodes = [
-        {"id": "n1", "type": "trigger", "icon": trig[0], "title": trig[1], "sub": trig[2], "next": ["n2"]},
-        {"id": "n2", "type": "condition", "icon": "filter", "title": "Check Important Mail" if mail else "Check Condition", "next": ["n3", "n4"], "labels": ["Yes", "No"]},
-        {"id": "n3", "type": "action", "icon": "ai" if mail else "bolt", "title": "AI Summarise & Draft Reply" if mail else "Run Main Action", "next": ["n5"]},
-        {"id": "n4", "type": "action", "icon": "database", "title": "Log to Database", "next": []},
-        {"id": "n5", "type": "action", "icon": "mail" if mail else "bell", "title": "Send Email Digest" if mail else "Send Notification", "next": ["n6"]},
-        {"id": "n6", "type": "end", "icon": "check", "title": "Update System Status", "next": []},
-    ]
-    return {"title": (prompt or "Workflow").strip()[:60].capitalize(), "nodes": nodes, "fallback": True}
+    key = "orders" if "order" in p else "telegram" if "telegram" in p else "report" if "report" in p else "mail"
+    t = _wf_templates(key)
+    return {"title": (prompt or t[0]).strip()[:60].capitalize(), "nodes": t[1], "fallback": True}
 
 
-def make_workflow(ai, prompt):
-    """Ask the AI for a workflow graph; fall back to a sensible template without a key."""
-    schema = ('{"title":"short name","nodes":[{"id":"n1","type":"trigger|action|condition|end","icon":"one of: %s",'
-              '"title":"2-4 words","sub":"optional short detail","next":["n2"],"labels":["Yes","No"] (only for condition)}]}' % _WF_ICONS)
-    q = (f"Design a workflow automation chart for: {prompt}\nReturn JSON exactly like {schema}. "
-         "Start with one trigger. Use 5-9 nodes, at most 2 condition nodes, each condition has exactly 2 next ids. "
-         "Every id referenced in next must exist. No cycles.")
+def _clean_nodes(raw):
+    ids = {str(n.get("id")) for n in raw}
+    out = []
+    for n in raw[:16]:
+        out.append({"id": str(n["id"]), "type": n.get("type") if n.get("type") in ("trigger", "action", "condition", "end") else "action",
+                    "icon": n.get("icon") or "bolt", "title": str(n.get("title", "Step"))[:40], "sub": str(n.get("sub", ""))[:40],
+                    "kind": n.get("kind") if n.get("kind") in _WF_KINDS.split() else "notify",
+                    "cfg": n.get("cfg") if isinstance(n.get("cfg"), dict) else {},
+                    "next": [str(x) for x in n.get("next", []) if str(x) in ids][:2], "labels": n.get("labels", [])[:2]})
+    return out
+
+
+_WF_SCHEMA = ('{"title":"short name","nodes":[{"id":"n1","type":"trigger|action|condition|end","icon":"one of: %s","kind":"one of: %s",'
+              '"title":"2-4 words","sub":"short detail","cfg":{"to":"","subject":"","body":"","text":"","url":"","prompt":"","condition":"unread>0|always","seconds":2},'
+              '"next":["n2"],"labels":["Yes","No"]}]}') % (_WF_ICONS, _WF_KINDS)
+
+
+def make_workflow(ai, prompt, current=None, edit=False):
+    """Create (or edit) a workflow graph with the AI; fall back to templates without a key."""
+    if edit:
+        q = f"Current workflow JSON: {json.dumps(current)[:5000]}\nInstruction: {prompt}\nReturn the full updated workflow as JSON like {_WF_SCHEMA}. Keep unchanged nodes and ids. Max 2 conditions (2 next each). No cycles."
+    else:
+        q = (f"Design a workflow automation for: {prompt}\nReturn JSON like {_WF_SCHEMA}. Start with one trigger. 5-9 nodes, at most 2 condition nodes "
+             "(exactly 2 next ids). kind=email needs cfg.to/subject/body; telegram needs cfg.text; sheet needs cfg.values; ai needs cfg.prompt. Every next id must exist. No cycles.")
     try:
         if not str((ai or {}).get("key") or "").strip():
+            if edit: raise ValueError("Add an AI key for free-form edits.")
             return _wf_fallback(prompt)
-        data = ask_json(ai, q, 1200)
-        ids = {n.get("id") for n in data.get("nodes", [])}
-        nodes = []
-        for n in data.get("nodes", [])[:14]:
-            nodes.append({"id": str(n["id"]), "type": n.get("type") if n.get("type") in ("trigger", "action", "condition", "end") else "action",
-                          "icon": n.get("icon") or "bolt", "title": str(n.get("title", "Step"))[:40], "sub": str(n.get("sub", ""))[:40],
-                          "next": [x for x in n.get("next", []) if x in ids][:2], "labels": n.get("labels", [])[:2]})
-        if len(nodes) < 2:
-            raise ValueError("too small")
+        data = ask_json(ai, q, 1800)
+        nodes = _clean_nodes(data.get("nodes", []))
+        if len(nodes) < 2: raise ValueError("too small")
         return {"title": str(data.get("title") or prompt)[:60], "nodes": nodes}
-    except Exception:
+    except Exception as exc:
+        if edit: raise
         return _wf_fallback(prompt)
+
+
+def _tpl(v, ctx):
+    return str(v or "").replace("{{ctx}}", ctx or "")[:4000]
+
+
+def run_wf_step(node, ctx, integ, ai):
+    """Really execute one workflow node. Returns (output_text, branch_index)."""
+    kind, cfg = node.get("kind", "notify"), node.get("cfg") or {}
+    if kind == "email":
+        gm = integ.get("gmail", {}); to = (cfg.get("to") or gm.get("email") or "").strip()
+        send_email(gm, to, _tpl(cfg.get("subject"), ctx) or "AXO workflow", _tpl(cfg.get("body"), ctx) or ctx)
+        return f"Email sent to {to}", 0
+    if kind == "telegram":
+        tg = integ.get("telegram", {})
+        if not tg.get("token"): raise ValueError("Telegram isn't connected (Settings > Integrations).")
+        r = requests.post(f"https://api.telegram.org/bot{tg['token']}/sendMessage", timeout=15, json={"chat_id": tg.get("chat"), "text": _tpl(cfg.get("text"), ctx) or ctx})
+        if not r.ok: raise ValueError("Telegram error: " + r.text[:100])
+        return "Telegram message sent", 0
+    if kind == "sheet":
+        hook = (integ.get("sheets") or {}).get("webhook", "")
+        if not hook.startswith("https://script.google.com/"): raise ValueError("Add your Apps Script link in Settings > Integrations.")
+        vals = _tpl(cfg.get("values"), ctx)
+        r = requests.post(hook, json={"values": [v.strip() for v in vals.split(",")][:20]}, timeout=20)
+        if not r.ok: raise ValueError("Sheet error " + str(r.status_code))
+        return "Row added to sheet", 0
+    if kind == "webhook":
+        url = cfg.get("url", "")
+        if not url.startswith("https://"): raise ValueError("Webhook needs an https:// URL.")
+        r = requests.post(url, json={"data": ctx}, timeout=15)
+        if not r.ok: raise ValueError("Webhook returned " + str(r.status_code))
+        return f"Webhook OK ({r.status_code})", 0
+    if kind == "ai":
+        if not str((ai or {}).get("key") or "").strip(): raise ValueError("Add an AI key in Settings.")
+        return chat_text(ai, (cfg.get("prompt") or "Summarise this.") + "\n\n" + (ctx or ""))[:3000], 0
+    if kind == "condition":
+        c = (cfg.get("condition") or "always").replace(" ", "")
+        if c.startswith("unread"):
+            n = unread_count(integ.get("gmail", {}))
+            if n is None: raise ValueError("Email isn't connected, so unread mail can't be checked.")
+            thr = int(re.sub(r"\D", "", c) or 0)
+            top = read_emails(integ.get("gmail", {}), 3) if n else []
+            body = f"{n} unread. " + "; ".join(f"{e['subject'][:50]} from {e['from'].split('<')[0].strip()[:25]}" for e in top)
+            return body, 0 if n > thr else 1
+        return ctx, 0
+    if kind == "wait":
+        time.sleep(min(float(cfg.get("seconds") or 1), 5)); return "Waited", 0
+    if kind == "trigger":
+        return ctx or "Started", 0
+    return (_tpl(cfg.get("text"), ctx) or ctx or "OK"), 0
+
+
+def make_file(ai, kind, prompt):
+    """AI builds a real .xlsx / .docx. Returns (filename, bytes, mimetype)."""
+    import io
+    if kind == "sheet":
+        d = ask_json(ai, f'Make a spreadsheet for: {prompt}\nJSON: {{"title":"name","headers":["col"],"rows":[["cell"]]}}. 5-25 useful rows, numbers as numbers, optional formulas as strings like "=B2*C2".', 2500)
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        wb = Workbook(); ws = wb.active; ws.title = str(d.get("title", "Sheet"))[:30] or "Sheet"
+        ws.append(d.get("headers", []))
+        for c in ws[1]: c.font = Font(bold=True, color="FFFFFF"); c.fill = PatternFill("solid", fgColor="3989F6")
+        for r in d.get("rows", [])[:200]: ws.append(r)
+        for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = min(40, max(10, max(len(str(c.value or "")) for c in col) + 2))
+        buf = io.BytesIO(); wb.save(buf)
+        name = re.sub(r"[^\w\- ]", "", str(d.get("title", "sheet")))[:40].strip() or "sheet"
+        return name + ".xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    d = ask_json(ai, f'Write a document for: {prompt}\nJSON: {{"title":"name","sections":[{{"heading":"text","paragraphs":["text"],"bullets":["text"]}}]}}. Well written, 3-6 sections.', 3500)
+    from docx import Document
+    doc = Document(); doc.add_heading(str(d.get("title", "Document")), 0)
+    for s_ in d.get("sections", [])[:12]:
+        doc.add_heading(str(s_.get("heading", "")), 1)
+        for p in s_.get("paragraphs", []): doc.add_paragraph(str(p))
+        for b in s_.get("bullets", []): doc.add_paragraph(str(b), style="List Bullet")
+    buf = io.BytesIO(); doc.save(buf)
+    name = re.sub(r"[^\w\- ]", "", str(d.get("title", "document")))[:40].strip() or "document"
+    return name + ".docx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
