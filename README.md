@@ -1,4 +1,4 @@
-# AXO Assistant — V16 — Pydroid 3 / Render
+# AXO Assistant — V17 — Pydroid 3 / Render
 
 A Flask-backed personal assistant with a chat-first interface, local conversation history, inline rich results, voice input and optional AI chat through OpenRouter, Google Gemini, OpenAI, Groq or a custom OpenAI-compatible endpoint.
 

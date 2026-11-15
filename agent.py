@@ -1103,3 +1103,46 @@ def test_ai(ai):
     provider = detect_provider(ai)
     model = str(ai.get("model") or _WORKING.get((chat_endpoint(ai), (ai.get("key") or "").strip()[-8:]), "default model"))
     return f"Connected ({provider}, {model})."
+
+
+# ---------------- Workflow chart builder ----------------
+_WF_ICONS = "calendar mail database webhook check bolt filter bell file user chat code cloud clock sheet ai globe"
+
+
+def _wf_fallback(prompt):
+    p = (prompt or "").lower()
+    mail = any(k in p for k in ("mail", "email", "inbox", "gmail"))
+    trig = ("calendar", "Schedule Trigger", "every morning") if any(k in p for k in ("morning", "daily", "every", "schedule")) else (("mail", "New Email Arrives", "inbox watcher") if mail else ("bolt", "Start Trigger", "manual or event"))
+    nodes = [
+        {"id": "n1", "type": "trigger", "icon": trig[0], "title": trig[1], "sub": trig[2], "next": ["n2"]},
+        {"id": "n2", "type": "condition", "icon": "filter", "title": "Check Important Mail" if mail else "Check Condition", "next": ["n3", "n4"], "labels": ["Yes", "No"]},
+        {"id": "n3", "type": "action", "icon": "ai" if mail else "bolt", "title": "AI Summarise & Draft Reply" if mail else "Run Main Action", "next": ["n5"]},
+        {"id": "n4", "type": "action", "icon": "database", "title": "Log to Database", "next": []},
+        {"id": "n5", "type": "action", "icon": "mail" if mail else "bell", "title": "Send Email Digest" if mail else "Send Notification", "next": ["n6"]},
+        {"id": "n6", "type": "end", "icon": "check", "title": "Update System Status", "next": []},
+    ]
+    return {"title": (prompt or "Workflow").strip()[:60].capitalize(), "nodes": nodes, "fallback": True}
+
+
+def make_workflow(ai, prompt):
+    """Ask the AI for a workflow graph; fall back to a sensible template without a key."""
+    schema = ('{"title":"short name","nodes":[{"id":"n1","type":"trigger|action|condition|end","icon":"one of: %s",'
+              '"title":"2-4 words","sub":"optional short detail","next":["n2"],"labels":["Yes","No"] (only for condition)}]}' % _WF_ICONS)
+    q = (f"Design a workflow automation chart for: {prompt}\nReturn JSON exactly like {schema}. "
+         "Start with one trigger. Use 5-9 nodes, at most 2 condition nodes, each condition has exactly 2 next ids. "
+         "Every id referenced in next must exist. No cycles.")
+    try:
+        if not str((ai or {}).get("key") or "").strip():
+            return _wf_fallback(prompt)
+        data = ask_json(ai, q, 1200)
+        ids = {n.get("id") for n in data.get("nodes", [])}
+        nodes = []
+        for n in data.get("nodes", [])[:14]:
+            nodes.append({"id": str(n["id"]), "type": n.get("type") if n.get("type") in ("trigger", "action", "condition", "end") else "action",
+                          "icon": n.get("icon") or "bolt", "title": str(n.get("title", "Step"))[:40], "sub": str(n.get("sub", ""))[:40],
+                          "next": [x for x in n.get("next", []) if x in ids][:2], "labels": n.get("labels", [])[:2]})
+        if len(nodes) < 2:
+            raise ValueError("too small")
+        return {"title": str(data.get("title") or prompt)[:60], "nodes": nodes}
+    except Exception:
+        return _wf_fallback(prompt)

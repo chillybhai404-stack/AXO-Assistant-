@@ -1402,6 +1402,21 @@ def _ai_from(payload):
     return ai
 
 
+@app.get("/workflow")
+def workflow_page():
+    return render_template("workflow.html")
+
+
+@app.post("/api/workflow")
+def workflow_route():
+    p = request.get_json(silent=True) or {}
+    prompt = str(p.get("prompt", "")).strip()[:400]
+    if not prompt:
+        return jsonify({"ok": False, "error": "Describe the workflow first."}), 400
+    ai = p.get("ai") if isinstance(p.get("ai"), dict) else {}
+    return jsonify({"ok": True, **agent.make_workflow(ai, prompt)})
+
+
 @app.post("/api/vision")
 def vision_route():
     p = request.get_json(silent=True) or {}
