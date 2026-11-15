@@ -287,3 +287,17 @@ body.reduce-motion *{animation:none!important;transition:none!important;scroll-b
 #tour .tip button{border:1px solid #3a3a42;background:#26262c;border-radius:999px;padding:6px 14px;font-size:13px}
 #tour .tip button.go{background:var(--blue);border-color:var(--blue);color:#fff}
 .wf-open{margin-top:8px;border:1px solid var(--blue);background:rgba(57,137,246,.14);border-radius:999px;padding:6px 14px;font-size:13px}
+
+/* ===== v18 ===== */
+.qa{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.qa button{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:3px 11px;font-size:11.5px}.qa button:hover{color:var(--text);background:var(--surface-2)}
+#palette{position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding-top:14vh}#palette.on{display:flex}
+#palette .pl-box{width:min(520px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#palette input{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);padding:15px 18px;font-size:15px;outline:none}
+#palette .pl-list{max-height:50vh;overflow:auto;padding:6px}#palette .pl-list div{padding:9px 12px;border-radius:9px;font-size:13.5px;cursor:pointer;color:var(--soft)}#palette .pl-list div.on,#palette .pl-list div:hover{background:var(--surface-3);color:var(--text)}
+.checklist{width:min(420px,92%);margin:18px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;text-align:left}
+.checklist .cl-h{display:flex;align-items:center;gap:8px;font-size:13px}.checklist .cl-h span{color:var(--muted);flex:1}.checklist .cl-h button{background:none;border:0;color:var(--muted)}
+.checklist .cl-bar{height:4px;background:var(--surface-3);border-radius:4px;margin:8px 0;overflow:hidden}.checklist .cl-bar i{display:block;height:100%;background:var(--blue);transition:width .5s}
+.checklist .cl-i{font-size:13px;padding:5px 0;color:var(--soft);cursor:pointer}.checklist .cl-i.ok{color:var(--green);cursor:default}
+.wf-drawer{position:fixed;top:0;right:0;bottom:0;width:min(760px,100vw);z-index:8000;background:var(--bg);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .35s}.wf-drawer.on{transform:none}
+.wf-drawer iframe{width:100%;height:100%;border:0}.wf-drawer .wf-x{position:absolute;top:10px;right:10px;z-index:2;background:var(--surface-3);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12px}
+@media(hover:none){.history-delete{opacity:.75}}

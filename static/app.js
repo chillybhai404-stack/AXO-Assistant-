@@ -88,9 +88,9 @@ function renderChatHistory(query = '') {
   if (!host) return;
   const search = query.trim().toLowerCase();
   host.innerHTML = '';
-  const matches = [...conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).filter(item => {
+  const matches = [...conversations].sort((a, b) => (!!b.pinned - !!a.pinned) || (b.updatedAt || 0) - (a.updatedAt || 0)).filter(item => {
     if (!search) return true;
-    return (item.title || '').toLowerCase().includes(search) || item.messages.some(message => String(message.content || '').toLowerCase().includes(search));
+    return (item.title || '').toLowerCase().includes(search) || (item.folder || '').toLowerCase().includes(search) || item.messages.some(message => String(message.content || '').toLowerCase().includes(search));
   });
   if (!matches.length) {
     host.innerHTML = `<div class="history-empty">${search ? 'No matching conversations.' : 'Your saved chats will appear here.'}</div>`;
@@ -102,7 +102,7 @@ function renderChatHistory(query = '') {
     const select = document.createElement('button');
     select.type = 'button';
     select.className = 'history-item-title';
-    select.textContent = item.title || 'New chat';
+    select.textContent = (item.folder ? `[${item.folder}] ` : '') + (item.title || 'New chat');
     select.title = item.title || 'New chat';
     select.addEventListener('click', () => loadConversation(item.id));
     const remove = document.createElement('button');
@@ -112,7 +112,11 @@ function renderChatHistory(query = '') {
     remove.setAttribute('aria-label', `Delete ${item.title || 'conversation'}`);
     remove.innerHTML = '<svg class="icon"><use href="#i-trash"/></svg>';
     remove.addEventListener('click', event => { event.stopPropagation(); deleteConversation(item.id); });
-    row.append(select, remove);
+    const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'history-delete'; pin.title = item.pinned ? 'Unpin' : 'Pin to top'; pin.textContent = item.pinned ? '★' : '☆';
+    pin.addEventListener('click', e => { e.stopPropagation(); item.pinned = !item.pinned; persistConversations(); renderChatHistory($('#historySearch')?.value || ''); });
+    const fold = document.createElement('button'); fold.type = 'button'; fold.className = 'history-delete'; fold.title = 'Put in a folder'; fold.textContent = '📁';
+    fold.addEventListener('click', e => { e.stopPropagation(); const n = prompt('Folder name (leave empty to remove):', item.folder || ''); if (n === null) return; item.folder = n.trim().slice(0, 20); persistConversations(); renderChatHistory($('#historySearch')?.value || ''); });
+    row.append(select, pin, fold, remove);
     host.append(row);
   });
 }
