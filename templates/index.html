@@ -125,12 +125,33 @@
             <div class="bot-chat"><div class="bot-msgs" id="botMsgs"></div>
               <form class="bot-chat-form" id="botChatForm"><input id="botInput" placeholder="Tell this bot what to do…" autocomplete="off"><button type="submit" class="pill-button go">Send</button></form></div>
           </div>
+          <div id="botsFlows" hidden>
+            <p class="settings-footnote">Chain bots into a pipeline. Each step gets the previous step's result. Run it here, or schedule it (Settings → Schedules, prompt: <b>workflow: name</b>).</p>
+            <div id="flowList"></div>
+            <form class="bot-form" id="flowForm" autocomplete="off"><label>Workflow name<input id="flName" maxlength="30" required></label><div id="flSteps"></div>
+              <div class="bf-actions"><button type="button" class="pill-button" id="flAddStep">+ Step</button><button type="submit" class="pill-button go">Save workflow</button></div></form>
+            <div class="bot-chat"><div class="bot-msgs" id="flowOut"></div></div>
+          </div>
+          <div id="botsTpl" hidden><p class="settings-footnote">Ready-made teams. Adding one keeps your current bots.</p><div id="tplList"></div><div class="bf-actions" style="margin-top:12px"><button class="pill-button" id="tplShare" type="button">Copy link to my team</button></div></div>
           <div id="botsSheet" hidden><div class="sheet-wrap"><table class="bot-sheet" id="botSheet"></table></div></div>
         </section>
         <section class="panel secondary-panel" id="panel-node">
           <div class="section-heading"><div><span class="section-eyebrow">ENVIRONMENT</span><h1>Node</h1><p>Your bots in 3D. Drag to rotate, pinch or scroll to zoom, tap a bot to open it.</p></div></div>
           <div class="node-stage" id="nodeStage"><span class="stage-note">Loading 3D…</span></div>
           <div class="node-card" id="nodeCard" hidden></div>
+        </section>
+        <section class="panel secondary-panel" id="panel-study">
+          <div class="section-heading"><div><span class="section-eyebrow">LEARN</span><h1>Study</h1><p>Paste notes or add a file. Get a summary, flashcards or a quiz. Needs your AI key.</p></div></div>
+          <textarea id="stText" rows="6" class="big-area" placeholder="Paste text to study…"></textarea>
+          <div class="bf-actions" style="margin:10px 0"><input id="stFile" type="file" accept=".txt,.md,.pdf"><button class="pill-button go" data-st="summary" type="button">Summary</button><button class="pill-button go" data-st="flashcards" type="button">Flashcards</button><button class="pill-button go" data-st="quiz" type="button">Quiz</button></div>
+          <div id="stOut"></div>
+        </section>
+        <section class="panel secondary-panel" id="panel-translate">
+          <div class="section-heading"><div><span class="section-eyebrow">LIVE</span><h1>Translate</h1><p>Speak in one language, hear it in another. Works for English, Hindi and Urdu.</p></div></div>
+          <div class="tr-bar"><select id="trFrom"><option value="en">English</option><option value="hi">Hindi</option><option value="ur">Urdu</option></select><button class="pill-button" id="trSwap" type="button" aria-label="Swap languages"></button><select id="trTo"><option value="ur">Urdu</option><option value="hi">Hindi</option><option value="en">English</option></select></div>
+          <button class="tr-mic" id="trMic" type="button">Tap to speak</button>
+          <label class="setting-row"><span><strong>Conversation mode</strong><small>Swap direction after each sentence so two people can talk.</small></span><input id="trConv" type="checkbox" class="toggle-input"></label>
+          <div id="trLog"></div>
         </section>
         <section class="panel secondary-panel" id="panel-news">
           <div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>News</h1><p>Current headlines from connected news sources.</p></div><span class="section-live"><i></i> LIVE FEED</span></div>
@@ -163,8 +184,12 @@
         <button data-sec="contacts" type="button">Contacts</button>
         <button data-sec="memory" type="button">Memory</button>
         <button data-sec="schedules" type="button">Schedules</button>
+        <button data-sec="biz" type="button">Business & alerts</button>
+        <button data-sec="plugins" type="button">Plugins</button>
+        <button data-sec="cloud" type="button">Cloud sync</button>
         <button data-sec="library" type="button">Library</button>
         <button data-sec="data" type="button">Data</button>
+        <button data-sec="privacy" type="button">Privacy</button>
         <button data-sec="about" type="button">About</button>
       </nav>
       <main class="sp-content">
@@ -181,18 +206,23 @@
         <section class="sp-sec" id="sec-appearance"><h3>Appearance</h3>
           <label class="setting-row"><span><strong>Theme</strong><small>Choose how AXO looks.</small></span><select id="themeSetting"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
           <div class="setting-row"><span><strong>Accent colour</strong><small>Toggles, links and highlights.</small></span><div class="swatches" id="accentSwatches"></div></div>
+          <label class="setting-row"><span><strong>Compact messages</strong><small>Tighter chat bubbles.</small></span><input id="compactSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Reduce motion</strong><small>Turn off animations.</small></span><input id="motionSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Text size</strong><small>Scales the whole interface.</small></span><select id="fontSizeSetting"><option value="90">Small</option><option value="100">Normal</option><option value="112">Large</option><option value="125">Extra large</option></select></label>
-          <label class="setting-row"><span><strong>Compact layout</strong><small>Reduce spacing to fit more content on screen.</small></span><input id="compactSetting" type="checkbox" class="toggle-input"></label>
-          <label class="setting-row"><span><strong>Reduce motion</strong><small>Use simpler transitions and animations.</small></span><input id="reduceMotionSetting" type="checkbox" class="toggle-input"></label>
         </section>
         <section class="sp-sec" id="sec-voice"><h3>Voice</h3>
           <label class="setting-row"><span><strong>Voice replies</strong><small>Read AXO's replies aloud.</small></span><input id="voiceReplySetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>AXO voice</strong><small>Neural voice used for speech.</small></span><select id="voiceNameSetting"><option value="en-GB-RyanNeural">Ryan (UK, male)</option><option value="en-GB-SoniaNeural">Sonia (UK, female)</option><option value="en-IN-PrabhatNeural">Prabhat (India, male)</option><option value="en-IN-NeerjaNeural">Neerja (India, female)</option><option value="en-US-GuyNeural">Guy (US, male)</option><option value="en-US-JennyNeural">Jenny (US, female)</option><option value="hi-IN-MadhurNeural">Madhur (Hindi, male)</option><option value="hi-IN-SwaraNeural">Swara (Hindi, female)</option><option value="ur-PK-AsadNeural">Asad (Urdu, male)</option><option value="ur-PK-UzmaNeural">Uzma (Urdu, female)</option><option value="ur-IN-GulNeural">Gul (Urdu India, female)</option><option value="ur-IN-SalmanNeural">Salman (Urdu India, male)</option></select></label>
           <label class="setting-row"><span><strong>Speech speed</strong><small id="rateLabel">Normal</small></span><input id="voiceRateSetting" type="range" min="-30" max="30" step="5"></label>
           <label class="setting-row"><span><strong>Wake word “Hey AXO”</strong><small>Say it to open voice mode hands-free. Needs the page open and uses the mic and battery.</small></span><input id="wakeWordSetting" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Voice ball movement</strong><small>How much the ball moves while talking.</small></span><select id="sphereMoveSetting"><option value="0.03">Very subtle</option><option value="0.08">Subtle</option><option value="0.2">Normal</option><option value="0">Still</option></select></label>
+          <label class="setting-row"><span><strong>Voice ball colour</strong></span><select id="sphereColorSetting"><option value="mint">Mint</option><option value="white">White</option><option value="blue">Blue</option><option value="pink">Pink</option><option value="gold">Gold</option></select></label>
           <label class="setting-row"><span><strong>Voice input language</strong><small>Language used by microphone input.</small></span><select id="voiceLanguageSetting"><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="en-US">English (US)</option><option value="hi-IN">Hindi</option><option value="ur-PK">Urdu (Pakistan)</option><option value="ur-IN">Urdu (India)</option></select></label>
         </section>
         <section class="sp-sec" id="sec-chat"><h3>Chat & media</h3>
+          <label class="setting-row"><span><strong>Reply length</strong><small>How long AXO's answers should be.</small></span><select id="lengthSetting"><option value="">Normal</option><option value="short">Short</option><option value="detailed">Detailed</option></select></label>
+          <label class="setting-row"><span><strong>Tone</strong></span><select id="toneSetting"><option value="">Friendly</option><option value="professional">Professional</option><option value="playful">Playful</option><option value="direct">Direct</option></select></label>
+          <label class="setting-row"><span><strong>Haptic feedback</strong><small>Small vibration on send and reply (phones).</small></span><input id="hapticSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Enter to send</strong><small>Use Shift + Enter for a new line.</small></span><input id="enterSendSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Auto-open media</strong><small>“Play skyfall” opens the player right away.</small></span><input id="autoOpenSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Default music app</strong><small>Used for songs not in your library.</small></span><select id="platformSetting"><option value="youtube">YouTube</option><option value="youtube music">YouTube Music</option><option value="spotify">Spotify</option><option value="jiosaavn">JioSaavn</option><option value="gaana">Gaana</option><option value="soundcloud">SoundCloud</option><option value="apple music">Apple Music</option></select></label>
@@ -207,7 +237,14 @@
           <div class="setting-row"><span><strong>Video links</strong><small id="videoCount">Add videos with a name and link.</small></span><button class="pill-button" data-go="videos" type="button">Manage</button></div>
         </section>
         <section class="sp-sec" id="sec-ai"><h3>AI & API</h3>
-          <p class="settings-footnote">Connect a provider for open-ended chat. AXO's local tools (weather, maps, images, media, notes and public data) continue to work if an AI provider is offline.</p>
+          <p class="settings-footnote">Connect an API provider for AXO's built-in AI agent. You can also open ChatGPT, Claude or Gemini in their official websites without adding an API key to AXO.</p>
+          <h4 class="int-h">Browser AI assistants</h4>
+          <div class="ai-browser-grid">
+            <article class="ai-browser-card"><span class="ai-brand"><img src="https://cdn.simpleicons.org/openai/10A37F" alt="OpenAI logo" loading="lazy"></span><div><strong>ChatGPT</strong><small>Open the official ChatGPT website. No AXO API key required.</small></div><button type="button" data-ai-handoff="chatgpt">Copy AXO context &amp; open</button></article>
+            <article class="ai-browser-card"><span class="ai-brand"><img src="https://cdn.simpleicons.org/anthropic/D97757" alt="Anthropic logo" loading="lazy"></span><div><strong>Claude</strong><small>Open Claude in your browser. No AXO API key required.</small></div><button type="button" data-ai-handoff="claude">Copy AXO context &amp; open</button></article>
+            <article class="ai-browser-card"><span class="ai-brand"><img src="https://cdn.simpleicons.org/googlegemini/8E75FF" alt="Google Gemini logo" loading="lazy"></span><div><strong>Gemini</strong><small>Open Google Gemini in your browser. No AXO API key required.</small></div><button type="button" data-ai-handoff="gemini">Copy AXO context &amp; open</button></article>
+          </div>
+          <p class="settings-footnote">The context handoff copies recent chat messages, saved notes and AXO memories, then opens the selected website. Paste the copied text there. This is a manual, user-controlled share; these websites cannot silently read AXO's private browser data or connected accounts.</p>
           <label class="setting-row"><span><strong>Agent mode</strong><small>Let the AI call AXO tools for multi-step tasks. Turn off for simple chat only.</small></span><input id="aiAgent" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>AI provider</strong><small>Choose the service that issued your key.</small></span><select id="aiProvider"><option value="auto">Auto-detect from key</option><option value="openrouter">OpenRouter</option><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="custom">Custom OpenAI-compatible</option></select></label>
           <label class="setting-row"><span><strong>API key</strong><small>Use a key from the provider you selected. Never paste it into a chat message.</small></span><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your API key"></label>
@@ -291,6 +328,36 @@
           <form class="note-form" id="schForm"><input id="schTime" type="time" value="08:00" required style="max-width:120px"><input id="schPrompt" maxlength="200" placeholder="What should AXO do?" value="daily briefing" required><button type="submit">Add <span>＋</span></button></form>
           <div id="schList"></div>
         </section>
+        <section class="sp-sec" id="sec-biz"><h3>Business & alerts</h3>
+          <p class="settings-footnote">Tell AXO where your shop data lives in Firebase. Then say “orders dashboard”, “draft replies to my reviews”, or turn on alerts.</p>
+          <label class="setting-row"><span><strong>Orders collection</strong></span><input id="bzOrders" placeholder="orders"></label>
+          <label class="setting-row"><span><strong>Total field</strong><small>Number on each order.</small></span><input id="bzTotal" placeholder="total"></label>
+          <label class="setting-row"><span><strong>Date field</strong></span><input id="bzDate" placeholder="createdAt"></label>
+          <label class="setting-row"><span><strong>Items field</strong><small>List of dishes in each order.</small></span><input id="bzItems" placeholder="items"></label>
+          <label class="setting-row"><span><strong>Reviews collection</strong></span><input id="bzReviews" placeholder="reviews"></label>
+          <label class="setting-row"><span><strong>Alerts</strong><small>Notify me about new orders, reviews, GitHub and unread email. Checks while AXO is open.</small></span><input id="alertOn" type="checkbox" class="toggle-input"></label>
+          <label class="setting-row"><span><strong>Check every</strong></span><select id="alertMins"><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option></select></label>
+          <div class="setting-row"><span><strong>Check now</strong><small id="alertMsg"></small></span><button class="pill-button" id="alertNow" type="button">Check</button></div>
+        </section>
+        <section class="sp-sec" id="sec-plugins"><h3>Plugins</h3>
+          <p class="settings-footnote">Browse ready-made public-data plugins or add your own HTTPS API. Public plugins do not need a separate service key. To let AXO's agent decide when to call them, connect one AI provider in AI &amp; API.</p>
+          <h4 class="int-h">Plugin gallery</h4><div class="plugin-gallery" id="builtInPluginGrid"></div>
+          <h4 class="int-h">Custom API plugin</h4>
+          <form class="bot-form" id="plForm" autocomplete="off">
+            <label>Name<input id="plName" maxlength="24" placeholder="cricket" required></label>
+            <label>What it does<input id="plDesc" maxlength="160" placeholder="Gets live cricket scores for a team" required></label>
+            <label>URL (https)<input id="plUrl" placeholder="https://api.example.com/score?team={team}" required></label>
+            <div class="bf-row"><label>Method<select id="plMethod"><option>GET</option><option>POST</option></select></label><label>Inputs (comma list)<input id="plParams" placeholder="team"></label></div>
+            <label>Header (optional)<input id="plHeader" placeholder="Authorization: Bearer …"></label>
+            <div class="bf-actions"><button type="submit" class="pill-button go">Add plugin</button></div>
+          </form>
+          <div id="plList"></div>
+        </section>
+        <section class="sp-sec" id="sec-cloud"><h3>Cloud sync</h3>
+          <p class="settings-footnote">Sign in with your own Firebase project to move settings, bots, memory and expenses between devices (passwords and API keys are never uploaded). In Firebase: enable Google sign-in, add your site's domain to Authorized domains, and set Firestore rules to <code>match /axoSync/{uid} { allow read, write: if request.auth.uid == uid; }</code>. Paste your <b>web app config</b> JSON (Project settings → Your apps).</p>
+          <label class="setting-row stack"><span><strong>Web app config</strong></span><textarea id="fbWeb" rows="4" placeholder='{"apiKey":"…","authDomain":"…","projectId":"…","appId":"…"}'></textarea></label>
+          <div class="setting-row"><span><strong id="cloudWho">Not signed in</strong><small id="cloudMsg"></small></span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="pill-button go" id="cloudIn" type="button">Sign in</button><button class="pill-button" id="cloudPush" type="button">Push</button><button class="pill-button" id="cloudPull" type="button">Pull</button><button class="pill-button" id="cloudOut" type="button">Sign out</button></span></div>
+        </section>
         <section class="sp-sec danger-zone" id="sec-data"><h3>Data & privacy</h3>
           <div class="setting-row"><span><strong>Export conversations</strong><small>Download a JSON backup of your local chats.</small></span><button class="pill-button" id="exportChats" type="button">Export</button></div>
           <div class="setting-row"><span><strong>Import conversations</strong><small>Restore a backup JSON file into this browser.</small></span><button class="pill-button" id="importChats" type="button">Import</button><input type="file" id="importChatsFile" accept="application/json,.json" hidden></div>
@@ -302,8 +369,24 @@
           <div class="setting-row"><span><strong>Forget my name</strong><small>You'll be asked again next time.</small></span><button class="danger-button" id="forgetName" type="button">Forget</button></div>
           <p class="settings-footnote">Chat history and preferences are stored in this browser on this device. Connection keys are stored in browser storage when you choose to save them; browser storage is not encrypted. The music/video library is stored by the AXO backend and may reset when a temporary hosting disk is redeployed.</p>
         </section>
-        <section class="sp-sec" id="sec-about"><h3>About</h3>
-          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant</strong><small>Personal AI assistant · AXU</small></div></div>
+        <section class="sp-sec" id="sec-privacy"><h3>Privacy &amp; data handling</h3>
+          <p class="settings-footnote">AXO runs as a web app. Where information is stored and who receives it depends on the feature you use and the connections you enable.</p>
+          <article class="privacy-card"><div class="privacy-symbol" data-icon="shield"></div><div><strong>Stored on this device</strong><p>Chat history, preferences, bot definitions, plugin settings, saved memory and other browser features are stored in this browser's local storage unless you explicitly use cloud sync. Clearing browser/site data can remove them. Local browser storage is not encrypted by AXO.</p></div></article>
+          <article class="privacy-card"><div class="privacy-symbol" data-icon="key"></div><div><strong>Credentials and connections</strong><p>Saved API keys and connection credentials are also kept in browser storage in this version, which is not an encrypted vault. When a feature is used, the relevant data or credential is sent to your AXO server to perform that action. Keep your device locked and never share a browser profile you have saved keys in.</p></div></article>
+          <article class="privacy-card"><div class="privacy-symbol" data-icon="globe"></div><div><strong>External AI and public sources</strong><p>Messages sent to an AI provider may be processed under that provider's terms. Public lookups such as Wikipedia, web search, weather and image search send the query to the relevant public provider. Browser shortcuts to ChatGPT, Claude, Gemini, Gmail and social sites only open those websites; they do not grant AXO private account access.</p></div></article>
+          <article class="privacy-card"><div class="privacy-symbol" data-icon="database"></div><div><strong>Server and cloud storage</strong><p>AXO's server processes requests and may hold backend files such as notes and libraries depending on the hosting environment. Render's local filesystem may be temporary unless a persistent disk is configured. Optional Firebase cloud sync stores only the data you choose to sync in your own Firebase project; credentials are excluded from the backup/sync bundle.</p></div></article>
+          <article class="privacy-card"><div class="privacy-symbol" data-icon="image"></div><div><strong>Photos and files</strong><p>When you submit an image for analysis, it is sent to the AI provider configured for vision. Only upload files you are comfortable sharing with that provider. PDF study extraction processes the supplied document through AXO's configured service when AI processing is requested.</p></div></article>
+          <div class="setting-row"><span><strong>Export or delete your data</strong><small>Use the Data section to export chats and preferences, clear connection keys, or delete local history. Also delete any optional copies in your Firebase project or provider accounts.</small></span><button class="pill-button" type="button" data-sec-jump="data">Open Data</button></div>
+          <p class="settings-footnote">AXO does not claim end-to-end encryption, anonymous account access, or automatic deletion from third-party providers. This summary describes the current app build; hosting and provider retention are governed by those services.</p>
+        </section>
+        <section class="sp-sec" id="sec-about"><h3>About AXO</h3>
+          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant · v16</strong><small>Personal assistant by AXU</small></div></div>
+          <p class="settings-footnote">AXO combines a Python/Flask backend, a browser interface, public-data tools and optional AI connections. Core commands such as calculations, selected public lookups and app shortcuts can run without an AI API key. AI-powered reasoning depends on a provider connection or a supported external AI website handoff.</p>
+          <h4 class="int-h">AXO Bots</h4>
+          <div class="privacy-card"><div class="privacy-symbol" data-icon="bot"></div><div><strong>Personal bots and bot teams</strong><p>Create focused assistants with their own names, instructions, knowledge notes, links and visual identity. Bots can use permitted AXO tools, and teams can pass one bot's result to the next as a workflow. Bot conversations and definitions are saved in this browser unless you export or sync them.</p><button type="button" class="pill-button" data-panel-jump="bots">Open bot studio</button></div></div>
+          <div class="privacy-card"><div class="privacy-symbol" data-icon="puzzle"></div><div><strong>Tools, plugins and integrations</strong><p>AXO's agent can use approved tools such as public search, notes, weather, charts and connected Gmail, GitHub or Firebase functions. Sending messages, editing external records or other consequential actions may ask for confirmation. A browser shortcut is not the same as an API integration.</p></div></div>
+          <div class="privacy-card"><div class="privacy-symbol" data-icon="globe"></div><div><strong>Browser-based AI choices</strong><p>ChatGPT, Claude and Gemini can be opened without configuring their API keys in AXO. Use the context handoff in AI &amp; API to copy a selected snapshot into the external website yourself.</p></div></div>
+          <p class="settings-footnote">AXO is a personal assistant interface, not an official product of OpenAI, Anthropic or Google. Their logos and names identify the external services only.</p>
         </section>
       </main>
     </div>
@@ -326,7 +409,7 @@
     </div>
   </div>
   <div class="voice-mode" id="voiceMode" aria-hidden="true">
-    <button class="vm-close" id="vmClose" type="button" aria-label="Close voice mode">✕</button>
+    <button class="vm-close" id="vmClose" type="button" aria-label="Close voice mode"><svg class="icon"><use href="#i-x"/></svg></button>
     <canvas id="vmCanvas"></canvas>
     <div class="vm-status" id="vmStatus">Listening…</div>
     <div class="vm-caption" id="vmCaption"></div>
@@ -334,7 +417,10 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="{{ url_for('static', filename='icons.js') }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   <script src="{{ url_for('static', filename='extra.js') }}"></script>
+  <script src="{{ url_for('static', filename='extra2.js') }}"></script>
+  <script src="{{ url_for('static', filename='ui.js') }}"></script>
 </body>
 </html>
