@@ -75,6 +75,8 @@ TOOLS = [
     {"name": "sheet_append", "description": "Prepare a new row for the user's connected Google Sheet. The user must tap Confirm.", "parameters": {"type": "object", "properties": {"values": {"type": "array", "items": {"type": "string"}}}, "required": ["values"]}},
     {"name": "firebase_trend", "description": "Chart Firestore data over time: totals per day. value_field is a numeric field to sum (empty = count docs); date_field a timestamp field.", "parameters": {"type": "object", "properties": {"collection": {"type": "string"}, "value_field": {"type": "string"}, "date_field": {"type": "string"}}, "required": ["collection"]}},
     {"name": "whatsapp_business_send", "description": "Prepare a real WhatsApp Business message. The user must tap Confirm.", "parameters": {"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}}, "required": ["to", "text"]}},
+    {"name": "orders_dashboard", "description": "Restaurant/shop sales summary from Firebase: orders and revenue today and this week, top items, with charts.", "parameters": {"type": "object", "properties": {}}},
+    {"name": "make_invoice", "description": "Create an invoice the user can print or save as PDF.", "parameters": {"type": "object", "properties": {"customer": {"type": "string"}, "business": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "qty": {"type": "number"}, "price": {"type": "number"}}}}, "currency": {"type": "string"}, "notes": {"type": "string"}}, "required": ["customer", "items"]}},
     {"name": "facebook_instagram", "description": "Open Facebook or Instagram (their personal feeds/DMs cannot be read through any public API).", "parameters": {"type": "object", "properties": {"app": {"type": "string", "enum": ["facebook", "instagram"]}, "query": {"type": "string"}}, "required": ["app"]}},
 ]
 
@@ -346,6 +348,149 @@ def build_briefing(integ, prefs, H):
     return "\n".join(lines), charts
 
 
+# ------------------------------------------------------------ business, vision, study (v13)
+def _fs_count(sess, pid, col):
+    base = f"https://firestore.googleapis.com/v1/projects/{pid}/databases/(default)/documents"
+    r = sess.post(base + ":runAggregationQuery", timeout=20, json={"structuredAggregationQuery": {
+        "structuredQuery": {"from": [{"collectionId": col}]}, "aggregations": [{"alias": "n", "count": {}}]}})
+    return int(r.json()[0]["result"]["aggregateFields"]["n"]["integerValue"])
+
+
+def _num(v):
+    try: return float(v)
+    except (TypeError, ValueError): return 0.0
+
+
+def orders_summary(cfg, biz, today):
+    sess, pid = _fb_session(cfg)
+    biz = biz or {}
+    col, tf, df, itf = biz.get("orders") or "orders", biz.get("total") or "total", biz.get("date") or "createdAt", biz.get("items") or "items"
+    docs = _docs(sess, pid, col, 300)
+    if not docs: return "No orders found in '" + col + "'. Check the collection name in Settings > Business.", []
+    day_rev, day_n, items = {}, {}, {}
+    for d in docs:
+        day = str(d.get(df) or d.get("updated") or "")[:10]
+        if not day: continue
+        day_rev[day] = day_rev.get(day, 0) + _num(d.get(tf)); day_n[day] = day_n.get(day, 0) + 1
+        for it in (d.get(itf) or []) if isinstance(d.get(itf), list) else []:
+            if isinstance(it, dict):
+                name = str(it.get("name") or it.get("title") or "?")[:24]; qty = _num(it.get("quantity") or it.get("qty") or 1) or 1
+            else: name, qty = str(it)[:24], 1
+            items[name] = items.get(name, 0) + qty
+    keys = sorted(day_rev)[-7:]
+    t = today.strftime("%Y-%m-%d")
+    lines = [f"Orders today: {day_n.get(t, 0)}, revenue {day_rev.get(t, 0):g}.",
+             f"Last {len(keys)} days: {sum(day_n[k] for k in keys)} orders, revenue {sum(day_rev[k] for k in keys):g}."]
+    charts = [{"title": "Revenue per day", "type": "line", "labels": [k[5:] for k in keys], "values": [round(day_rev[k], 2) for k in keys]}]
+    if items:
+        top = sorted(items.items(), key=lambda x: -x[1])[:6]
+        lines.append("Top dishes: " + ", ".join(f"{n} ({q:g})" for n, q in top))
+        charts.append({"title": "Top items", "type": "bar", "labels": [n for n, _ in top], "values": [q for _, q in top]})
+    return "\n".join(lines), charts
+
+
+def watch_snapshot(integ, biz):
+    snap = {}
+    fb = (integ or {}).get("firebase", {})
+    if fb.get("service_account"):
+        try:
+            sess, pid = _fb_session(fb)
+            snap["orders"] = _fs_count(sess, pid, (biz or {}).get("orders") or "orders")
+            snap["reviews"] = _fs_count(sess, pid, (biz or {}).get("reviews") or "reviews")
+        except Exception: pass
+    gh_ = (integ or {}).get("github", {})
+    if gh_.get("token"):
+        try: snap["github"] = len(gh(gh_, "/notifications", params={"per_page": 50}))
+        except Exception: pass
+    gm = (integ or {}).get("gmail", {})
+    if gm.get("email") and gm.get("password"):
+        try: snap["mail"] = unread_count(gm)
+        except Exception: pass
+    return snap
+
+
+VISION_MODELS = {"gemini": ["gemini-flash-latest", "gemini-2.5-flash"], "openai": ["gpt-4o-mini"],
+                 "groq": ["meta-llama/llama-4-scout-17b-16e-instruct"], "openrouter": ["openai/gpt-4o-mini", "google/gemini-2.5-flash"]}
+
+
+def vision(ai, image, question):
+    if not re.match(r"^data:image/(jpeg|png|webp);base64,", image or "") or len(image) > 3_000_000:
+        raise ValueError("Please send a smaller JPEG, PNG or WebP image.")
+    prov = detect_provider(ai)
+    body = {"messages": [{"role": "user", "content": [{"type": "text", "text": (question or "Describe this image. If it has text (a bill, label, note), read it out accurately.")[:600]},
+                                                    {"type": "image_url", "image_url": {"url": image}}]}], "max_tokens": 700}
+    data = post_chat(ai, body, VISION_MODELS.get(prov) or None)
+    return (data["choices"][0]["message"].get("content") or "").strip()
+
+
+def _json_from(text):
+    m = re.search(r"\{.*\}", text or "", re.S)
+    if not m: raise ValueError("The AI didn't return usable data. Try again.")
+    return json.loads(m.group(0))
+
+
+def ask_json(ai, prompt, max_tokens=900):
+    data = post_chat(ai, {"messages": [{"role": "system", "content": "Reply with ONLY valid minified JSON, no markdown."}, {"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": 0.3})
+    return _json_from(data["choices"][0]["message"].get("content"))
+
+
+def pdf_text(b64):
+    import io
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise ValueError("PDF reading isn't installed on this server. Paste the text instead.")
+    r = PdfReader(io.BytesIO(base64.b64decode(b64)))
+    return " ".join((p.extract_text() or "") for p in r.pages[:30])
+
+
+def study(ai, text, mode):
+    text = re.sub(r"\s+", " ", text or "").strip()[:7000]
+    if len(text) < 40: raise ValueError("Give me a bit more text to study.")
+    if mode == "flashcards":
+        return ask_json(ai, 'Make 8 flashcards from this text as {"cards":[{"q":"...","a":"..."}]}. Text: ' + text)
+    if mode == "quiz":
+        return ask_json(ai, 'Make 5 multiple-choice questions from this text as {"questions":[{"q":"...","options":["A","B","C","D"],"answer":0,"why":"..."}]} (answer is the index 0-3). Text: ' + text, 1200)
+    return ask_json(ai, 'Summarise this text as {"summary":"5-7 short bullet lines separated by \\n"}. Text: ' + text, 600)
+
+
+def braindump(ai, text, now):
+    return ask_json(ai, f'Now is {now}. Turn this spoken note into JSON {{"tasks":["..."],"reminders":[{{"text":"...","minutes":N}}],"events":[{{"title":"...","start":"YYYY-MM-DD HH:MM","minutes":60}}],"notes":["..."]}}. Only include what is clearly stated. Note: ' + text[:3000], 800)
+
+
+def translate(ai, text, src, dst):
+    names = {"en": "English", "hi": "Hindi", "ur": "Urdu"}
+    text = (text or "").strip()[:800]
+    if (ai.get("key") or "").strip():
+        d = post_chat(ai, {"messages": [{"role": "system", "content": "You are a translator. Output only the translation."},
+                                         {"role": "user", "content": f"Translate from {names.get(src, src)} to {names.get(dst, dst)}: {text}"}], "max_tokens": 400, "temperature": 0})
+        return (d["choices"][0]["message"].get("content") or "").strip()
+    r = requests.get("https://api.mymemory.translated.net/get", params={"q": text, "langpair": f"{src}|{dst}"}, timeout=15)
+    return r.json().get("responseData", {}).get("translatedText", "")
+
+
+def run_plugin(p, args):
+    import ipaddress, socket
+    from urllib.parse import urlparse, quote as q
+    url = str(p.get("url", ""))
+    for k, v in (args or {}).items():
+        url = url.replace("{" + k + "}", q(str(v)))
+    u = urlparse(url)
+    if u.scheme != "https" or not u.hostname: raise ValueError("Plugin URL must be https.")
+    for info in socket.getaddrinfo(u.hostname, None):
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved: raise ValueError("Plugin points to a private address.")
+    headers = {"User-Agent": "AXO"}
+    if ":" in str(p.get("header", "")):
+        hk, hv = str(p["header"]).split(":", 1); headers[hk.strip()] = hv.strip()
+    if str(p.get("method", "GET")).upper() == "POST":
+        r = requests.post(url, json=args, headers=headers, timeout=15, allow_redirects=False)
+    else:
+        left = {k: v for k, v in (args or {}).items() if "{" + k + "}" not in str(p.get("url", ""))}
+        r = requests.get(url, params=left, headers=headers, timeout=15, allow_redirects=False)
+    return r.text[:2500]
+
+
 # --------------------------------------------------------------- firebase
 def _fb_session(cfg):
     from google.oauth2 import service_account
@@ -484,7 +629,7 @@ def _response_error(response):
     return re.sub(r"\s+", " ", detail).strip()[:260]
 
 
-def post_chat(ai, body):
+def post_chat(ai, body, models_override=None):
     """Send an OpenAI-compatible request with a safe provider/model fallback."""
     ai = ai or {}
     key = str(ai.get("key") or "").strip()
@@ -604,6 +749,7 @@ TOOL_GROUPS = {
     "firebase": ("firebase", "firestore", "database", "my app", "users", "orders", "collection", "data"),
     "chart": ("chart", "graph", "plot", "compare", "trend", "stats", "statistics", "firebase", "firestore", "count"),
     "web": ("search", "internet", "web", "latest", "news about", "find out", "research", "who is", "what is", "price", "http"),
+    "orders": ("orders", "sales", "revenue", "dashboard", "dishes", "reviews", "customer"), "invoice": ("invoice", "bill ", "receipt"),
     "memory": ("remember", "my favourite", "my favorite", "i like", "i prefer", "don't forget"), "schedule": ("every day", "every morning", "daily at", "schedule", "at 8", "each day"),
     "brief": ("briefing", "summary of my day", "catch me up", "morning"), "calendar": ("calendar", "meeting", "event", "schedule for", "appointment", "today", "tomorrow"),
     "sheets": ("sheet", "spreadsheet", "row", "docs.google"), 
@@ -621,7 +767,7 @@ TOOL_TO_GROUP = {
     "call_contact": "phone", "send_sms": "phone", "whatsapp_message": "phone", "telegram_send": "telegram",
     "play_music": "media", "watch_video": "media", "save_note": "notes", "list_notes": "notes", "set_reminder": "notes",
     "get_weather": "weather", "get_news": "weather", "wikipedia": "lookup", "lookup": "lookup",
-    "remember": "memory", "schedule_task": "schedule", "daily_briefing": "brief", "calendar_events": "calendar", "create_event": "calendar",
+    "orders_dashboard": "orders", "make_invoice": "invoice", "remember": "memory", "schedule_task": "schedule", "daily_briefing": "brief", "calendar_events": "calendar", "create_event": "calendar",
     "read_sheet": "sheets", "sheet_append": "sheets", "firebase_trend": "firebase", "whatsapp_business_send": "phone",
     "open_app": "apps", "open_url": "apps", "facebook_instagram": "apps",
 }
@@ -661,18 +807,88 @@ def safe_fetch(url, limit=5000):
 
 
 def web_search(query):
-    r = requests.post("https://html.duckduckgo.com/html/", data={"q": query}, timeout=12, headers={"User-Agent": "Mozilla/5.0 AXO"})
-    out = []
-    for m in re.finditer(r'class="result__a" href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>', r.text, re.S):
-        href = m.group(1)
-        mm = re.search(r"uddg=([^&]+)", href)
-        if mm:
-            from urllib.parse import unquote
-            href = unquote(mm.group(1))
-        clean = lambda t: re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", t)).strip()
-        out.append({"title": clean(m.group(2)), "url": href, "snippet": clean(m.group(3))[:200]})
-        if len(out) >= 5: break
-    return out or [{"title": "No results", "url": "", "snippet": ""}]
+    """Anonymous DuckDuckGo HTML search with tolerant result extraction.
+
+    This is a public-web lookup, not a private account connector. Search markup
+    can change, so malformed/empty results return an empty list rather than
+    fabricated entries.
+    """
+    from html.parser import HTMLParser
+    from urllib.parse import urlparse, parse_qs, unquote
+    from html import unescape
+
+    class ResultParser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.results = []
+            self.current = None
+            self.capture = None
+            self.capture_depth = 0
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            classes = set((attrs.get("class") or "").split())
+            if tag == "a" and "result__a" in classes:
+                if self.current and self.current.get("title"):
+                    self.results.append(self.current)
+                href = attrs.get("href", "")
+                parsed = urlparse(href)
+                if parsed.path.startswith("/l/") or "uddg" in parsed.query:
+                    href = parse_qs(parsed.query).get("uddg", [href])[0]
+                href = unquote(href)
+                if href.startswith("//"):
+                    href = "https:" + href
+                self.current = {"title": "", "url": href, "snippet": ""}
+                self.capture = "title"
+                self.capture_depth = 1
+            elif self.current and ("result__snippet" in classes or "result__snippet" in (attrs.get("data-testid") or "")):
+                self.capture = "snippet"
+                self.capture_depth = 1
+            elif self.capture:
+                self.capture_depth += 1
+
+        def handle_data(self, data):
+            if self.current and self.capture:
+                self.current[self.capture] += data
+
+        def handle_endtag(self, tag):
+            if self.capture:
+                self.capture_depth -= 1
+                if self.capture_depth <= 0:
+                    self.capture = None
+                    self.capture_depth = 0
+
+        def close(self):
+            super().close()
+            if self.current and self.current.get("title"):
+                self.results.append(self.current)
+
+    query = re.sub(r"\s+", " ", str(query or "")).strip()[:180]
+    if not query:
+        return []
+    response = requests.post(
+        "https://html.duckduckgo.com/html/", data={"q": query}, timeout=12,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; AXOAssistant/16; +https://duckduckgo.com)"},
+    )
+    response.raise_for_status()
+    parser = ResultParser()
+    parser.feed(response.text)
+    parser.close()  # flush the final parsed result as well
+    output, seen = [], set()
+    for item in parser.results:
+        url = item.get("url", "").strip()
+        parsed = urlparse(url)
+        title = re.sub(r"\s+", " ", unescape(item.get("title", ""))).strip()
+        snippet = re.sub(r"\s+", " ", unescape(item.get("snippet", ""))).strip()
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or not title:
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        output.append({"title": title[:180], "url": url[:1000], "snippet": snippet[:320], "source": parsed.hostname})
+        if len(output) >= 8:
+            break
+    return output
 
 
 def run_agent(message, history, ai, integ, H, role=None, allowed=None, depth=0, bots=None, out=None):
@@ -681,6 +897,10 @@ def run_agent(message, history, ai, integ, H, role=None, allowed=None, depth=0, 
         raise ValueError("AI isn't configured.")
     addr = ai.get("address") or "the user"
     sysmsg = SYSTEM.format(addr=addr, now=H["now"]().strftime("%A %d %b %Y, %I:%M %p"))
+    if ai.get("hints"):
+        sysmsg += "\n" + str(ai["hints"])[:400]
+    if ai.get("style"):
+        sysmsg += "\nStyle: " + str(ai["style"])[:160]
     mem = [str(x)[:160] for x in (ai.get("memory") or [])[:15]]
     if mem:
         sysmsg += "\nKnown about the user: " + "; ".join(mem)
@@ -689,11 +909,19 @@ def run_agent(message, history, ai, integ, H, role=None, allowed=None, depth=0, 
     msgs = [{"role": "system", "content": sysmsg}]
     msgs += [{"role": m["role"], "content": str(m["content"])[:700]} for m in (history or [])[-6:] if m.get("role") in ("user", "assistant")]
     msgs.append({"role": "user", "content": message})
+    plugins = [p for p in (integ.get("plugins") or [])[:16] if isinstance(p, dict) and p.get("name") and p.get("url")]
     manager = bool(bots) and depth < 2
     tools = [{"type": "function", "function": t} for t in select_tools(message + " " + (role or ""), ("delegate",) if manager else (), allowed)]
     if not manager:
         tools = [t for t in tools if t["function"]["name"] != "delegate"]
-    out = out if out is not None else {"actions": [], "confirms": [], "reminders": [], "cards": [], "news": None, "charts": [], "trace": [], "memory_add": [], "schedules": []}
+    ml = message.lower()
+    for p in plugins:
+        words = [w for w in re.findall(r"[a-z]{4,}", (str(p.get("name")) + " " + str(p.get("description"))).lower())]
+        if "plugin" in ml or any(w in ml for w in words):
+            params = [x.strip() for x in str(p.get("params", "")).split(",") if x.strip()][:6]
+            tools.append({"type": "function", "function": {"name": "plugin_" + re.sub(r"\W+", "_", str(p["name"]).lower()), "description": str(p.get("description", ""))[:200],
+                          "parameters": {"type": "object", "properties": {k: {"type": "string"} for k in params}}}})
+    out = out if out is not None else {"actions": [], "confirms": [], "reminders": [], "cards": [], "news": None, "charts": [], "trace": [], "memory_add": [], "schedules": [], "invoice": None}
     prefs = {"platform": ai.get("platform", "youtube"), "video_platform": ai.get("video_platform", "youtube")}
 
     def call(name, a):
@@ -801,6 +1029,16 @@ def run_agent(message, history, ai, integ, H, role=None, allowed=None, depth=0, 
         if name == "whatsapp_business_send":
             if not (integ.get("wabiz") or {}).get("token"): return "WhatsApp Business isn't connected."
             out["confirms"].append({"kind": "wabiz", "summary": f"WhatsApp to {a.get('to')}", "payload": {"to": a.get("to", ""), "text": str(a.get("text", ""))[:1500]}}); return "Draft shown; waiting for confirmation."
+        if name == "orders_dashboard":
+            txt, ch = orders_summary(integ.get("firebase", {}), ai.get("biz"), H["now"]()); out["charts"].extend(ch); return txt
+        if name == "make_invoice":
+            items = [{"name": str(i.get("name", ""))[:60], "qty": _num(i.get("qty") or 1) or 1, "price": _num(i.get("price"))} for i in (a.get("items") or [])[:30] if isinstance(i, dict)]
+            out["invoice"] = {"customer": str(a.get("customer", ""))[:80], "business": str(a.get("business", "") or "")[:80], "items": items, "currency": str(a.get("currency") or "₹")[:4],
+                              "notes": str(a.get("notes", "") or "")[:300], "date": H["now"]().strftime("%d %b %Y"), "no": H["now"]().strftime("%y%m%d%H%M")}
+            return "Invoice shown to the user with a Print / Save PDF button."
+        if name.startswith("plugin_"):
+            p = next((x for x in plugins if "plugin_" + re.sub(r"\W+", "_", str(x.get("name", "")).lower()) == name), None)
+            return run_plugin(p, a) if p else "Unknown plugin."
         if name == "web_search":
             return json.dumps(web_search(str(a.get("query", ""))))[:3000]
         if name == "read_url":

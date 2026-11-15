@@ -903,15 +903,50 @@ def handle_images(text):
     return make_result(f"I found {len(images)} image results for {query}.", images=images, intent="images")
 
 
+def knowledge_query(text):
+    patterns = [
+        r"\bwhat\s+(?:is|are|was|were)\s+(.+)$",
+        r"\bwho\s+(?:is|was|are|were)\s+(.+)$",
+        r"\b(?:tell me about|explain|give me information about|information about)\s+(.+)$",
+        r"\bdefine\s+(.+)$",
+    ]
+    return extract_subject(text, patterns)
+
+
+def lookup_knowledge(query, explicit_wikipedia=False):
+    """Source-first knowledge lookup: Wikipedia, then anonymous web search.
+
+    Returning None lets the configured AI API be the final fallback in
+    /api/chat. No provider key is needed for the two public source lookups.
+    """
+    query = clean_query(query)
+    if not query or query.lower() in {"it", "this", "that", "they", "them", "he", "she"}:
+        return None
+    try:
+        data = wikipedia_search(query)
+        return make_result(data["extract"], cards=[{"type": "wiki", **data}], source="wikipedia", intent="wikipedia")
+    except (requests.RequestException, ValueError, KeyError, TypeError) as wiki_error:
+        try:
+            results = agent.web_search(query)
+        except Exception:
+            results = []
+        if results:
+            note = f"I couldn't find a clear Wikipedia article for {query}. Here are public web search results."
+            return make_result(note, cards=[{"type": "web_search", "query": query, "items": results}], source="web_search", intent="web_search")
+        if explicit_wikipedia:
+            return make_result(
+                f"I couldn't find a Wikipedia article or public search results for {query}."
+                + " Add an AI provider key for another answer source, or try a different search phrase.",
+                source="local", intent="lookup_unavailable",
+            )
+        return None
+
+
 def handle_wikipedia(text):
-    query = extract_subject(text, [
-        r"\b(?:wikipedia|wiki)\s+(?:article\s+)?(?:about\s+)?(.+)$",
-        r"\b(?:tell me about|explain|who is|who was|what is|what was|define)\s+(.+)$",
-    ])
+    query = extract_subject(text, [r"\b(?:wikipedia|wiki)\s+(?:article\s+)?(?:about\s+)?(.+)$"])
     if not query:
         query = clean_query(text)
-    data = wikipedia_search(query)
-    return make_result(data["extract"], cards=[{"type": "wiki", **data}], intent="wikipedia")
+    return lookup_knowledge(query, explicit_wikipedia=True)
 
 
 def process_local_command(message: str, prefs=None):
@@ -1050,6 +1085,16 @@ def process_local_command(message: str, prefs=None):
             data = get_dictionary(word)
             reply = "; ".join(f"{m['part']}: {', '.join(m['definitions'])}" for m in data["meanings"])
             return make_result(f"{data['word']}: {reply}", cards=[{"type": "dictionary", **data}], intent="dictionary")
+
+    # Common knowledge questions try Wikipedia first, even with no AI API key.
+    # If Wikipedia has no usable page, the public web-search fallback is tried;
+    # only if that also has no result does /api/chat continue to the AI provider.
+    if re.search(r"\b(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are|were)|tell me about|explain)\b", lower):
+        query = knowledge_query(text)
+        if query:
+            result = lookup_knowledge(query)
+            if result is not None:
+                return result
 
     if re.search(r"\b(iss|space station|international space station)\b", lower):
         data = get_iss()
@@ -1198,12 +1243,20 @@ def process_local_command(message: str, prefs=None):
         articles = get_space_news(query)
         return make_result(f"Here are {len(articles)} recent spaceflight stories.", news=articles, intent="space_news")
 
-    # General web search is a useful fallback rather than a dead end.
-    if lower.startswith("search ") or lower.startswith("google "):
-        query = text.split(" ", 1)[1].strip()
-        return make_result(f"Searching the web for {query}.",
-                           {"type": "open_url", "url": web_search_url(query, prefs.get("search_engine", "google")), "label": "OPEN SEARCH", "auto": True},
-                           intent="web_search")
+    # Search the public web for useful results before falling back to a browser link.
+    search_match = re.match(r"^(?:please\s+)?(?:search(?:\s+the\s+web)?|google|web search)(?:\s+(?:for|about))?\s+(.+)$", text, flags=re.I)
+    if search_match:
+        query = clean_query(search_match.group(1))
+        try:
+            results = agent.web_search(query)
+        except Exception:
+            results = []
+        if results:
+            return make_result(f"Here are public web results for {query}.", cards=[{"type": "web_search", "query": query, "items": results}], source="web_search", intent="web_search")
+        engine = (prefs or {}).get("search_engine", "google")
+        return make_result(f"I couldn't retrieve result cards right now. Opening {engine.title()} search for {query}.",
+                           {"type": "open_url", "url": web_search_url(query, engine), "label": "OPEN SEARCH", "auto": True},
+                           source="browser_search", intent="web_search")
 
     if lower.startswith("open "):
         target = text[5:].strip()
@@ -1342,6 +1395,59 @@ def library():
     return jsonify({"ok": True, **load_library()})
 
 
+def _ai_from(payload):
+    ai = payload.get("ai") if isinstance(payload.get("ai"), dict) else {}
+    if not str(ai.get("key") or "").strip():
+        raise ValueError("Add an AI key in Settings > AI & API first.")
+    return ai
+
+
+@app.post("/api/vision")
+def vision_route():
+    p = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, "reply": agent.vision(_ai_from(p), p.get("image", ""), str(p.get("question", "")))})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+
+
+@app.post("/api/study")
+def study_route():
+    p = request.get_json(silent=True) or {}
+    try:
+        text = str(p.get("text", ""))
+        if p.get("pdf"): text = agent.pdf_text(p["pdf"])
+        return jsonify({"ok": True, "data": agent.study(_ai_from(p), text, str(p.get("mode", "summary")))})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+
+
+@app.post("/api/braindump")
+def braindump_route():
+    p = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, "data": agent.braindump(_ai_from(p), str(p.get("text", "")), india_now().strftime("%A %Y-%m-%d %H:%M"))})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+
+
+@app.post("/api/translate")
+def translate_route():
+    p = request.get_json(silent=True) or {}
+    ai = p.get("ai") if isinstance(p.get("ai"), dict) else {}
+    try:
+        return jsonify({"ok": True, "text": agent.translate(ai, str(p.get("text", "")), str(p.get("from", "en"))[:2], str(p.get("to", "en"))[:2])})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:200]}), 400
+
+
+@app.post("/api/watch")
+def watch_route():
+    p = request.get_json(silent=True) or {}
+    integ = p.get("integrations") if isinstance(p.get("integrations"), dict) else {}
+    return jsonify({"ok": True, "snap": agent.watch_snapshot(integ, p.get("biz") or {})})
+
+
 @app.get("/sw.js")
 def service_worker():
     resp = send_from_directory(str(BASE_DIR / "static"), "sw.js", mimetype="application/javascript")
@@ -1362,6 +1468,40 @@ def apps_route():
 @app.get("/api/apis")
 def api_catalog_route():
     return jsonify({"ok": True, "count": len(API_CATALOG), "items": API_CATALOG})
+
+
+# Fixed public endpoints only: the browser cannot supply an arbitrary URL.
+BUILTIN_PLUGIN_ENDPOINTS = {
+    "Open Library": {"url": "https://openlibrary.org/search.json?q={query}", "params": ["query"]},
+    "Dictionary Lookup": {"url": "https://api.dictionaryapi.dev/api/v2/entries/en/{word}", "params": ["word"]},
+    "Word Explorer": {"url": "https://api.datamuse.com/words?ml={word}", "params": ["word"]},
+    "GitHub Repositories": {"url": "https://api.github.com/search/repositories?q={query}", "params": ["query"]},
+    "TV & Shows": {"url": "https://api.tvmaze.com/search/shows?q={query}", "params": ["query"]},
+    "Anime Explorer": {"url": "https://api.jikan.moe/v4/anime?q={query}", "params": ["query"]},
+    "Country Facts": {"url": "https://restcountries.com/v3.1/name/{country}", "params": ["country"]},
+    "Species Finder": {"url": "https://api.inaturalist.org/v1/taxa/autocomplete?q={query}", "params": ["query"]},
+    "Spaceflight News": {"url": "https://api.spaceflightnewsapi.net/v4/articles/?search={query}", "params": ["query"]},
+}
+
+
+@app.post("/api/plugin-run")
+def plugin_run_route():
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name", "")).strip()
+    query = str(payload.get("query", "")).strip()
+    plugin = BUILTIN_PLUGIN_ENDPOINTS.get(name)
+    if not plugin:
+        return jsonify({"ok": False, "error": "That built-in plugin is not available."}), 404
+    if not query:
+        return jsonify({"ok": False, "error": "Enter something to search for."}), 400
+    if len(query) > 120:
+        return jsonify({"ok": False, "error": "Search text must be 120 characters or fewer."}), 400
+    args = {plugin["params"][0]: query}
+    try:
+        output = agent.run_plugin({"url": plugin["url"], "method": "GET", "header": ""}, args)
+        return jsonify({"ok": True, "name": name, "output": str(output)[:2500], "source": plugin["url"].split("/", 3)[2]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"{name} could not return results: {str(exc)[:180]}"}), 503
 
 
 @app.route("/api/notes", methods=["GET", "POST", "DELETE"])
@@ -1401,6 +1541,13 @@ def chat_route():
     integ = payload.get("integrations") if isinstance(payload.get("integrations"), dict) else {}
     prefs = payload.get("prefs") if isinstance(payload.get("prefs"), dict) else {}
 
+    if re.fullmatch(r"(my |the |show |open )*(orders? |sales |shop |restaurant )?(dashboard|summary|report)( of| for)?( my| the| today'?s)*( orders?| sales)?|(today'?s |my )?(sales|orders|revenue)( summary| today)?|how are my (orders|sales)", re.sub(r"[!?.,]", "", message.lower()).strip()) and (integ.get("firebase") or {}).get("service_account"):
+        try:
+            txt, charts = agent.orders_summary(integ["firebase"], prefs.get("biz"), india_now())
+            res = make_result(txt, intent="orders"); res["charts"] = charts
+            return jsonify({"ok": True, **res})
+        except Exception as exc:
+            return jsonify({"ok": True, **make_result(f"Couldn't read your orders: {str(exc)[:160]}", intent="error")})
     if re.fullmatch(r"(my |the )?(daily |morning |day )?(briefing|brief|summary of my day)|catch me up|brief me", re.sub(r"[!?.,]", "", message.lower()).strip()):
         try:
             txt, charts = agent.build_briefing(integ, prefs, {"now": india_now, "weather": get_weather, "load_notes": load_notes})
@@ -1436,6 +1583,7 @@ def chat_route():
             result["confirms"] = out.get("confirms", [])
             result["reminders"] = out.get("reminders", [])
             result["charts"] = out.get("charts", [])
+            result["invoice"] = out.get("invoice")
             result["memory_add"] = out.get("memory_add", []); result["schedules"] = out.get("schedules", [])
             for k in ("images", "map"):
                 if out.get(k): result[k] = out[k]
@@ -1512,7 +1660,7 @@ def bot_chat_route():
         result = make_result(reply, acts[0] if acts else None, news=out.get("news"), source="bot", intent="bot")
         result.update({"actions": acts, "confirms": out.get("confirms", []), "reminders": out.get("reminders", []),
                        "charts": out.get("charts", []), "trace": out.get("trace", []),
-                       "memory_add": out.get("memory_add", []), "schedules": out.get("schedules", [])})
+                       "memory_add": out.get("memory_add", []), "schedules": out.get("schedules", []), "invoice": out.get("invoice")})
         for k in ("images", "map"):
             if out.get(k): result[k] = out[k]
         return jsonify({"ok": True, **result})

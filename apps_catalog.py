@@ -16,6 +16,10 @@ def _sys(extra, web):
 
 # key: (label, simpleicons slug / emoji, color, android uri, ios uri, web url, aliases)
 APPS = {
+    # Browser-based AI assistants: no provider API key is needed to open the official sites.
+    "chatgpt": ("ChatGPT", "openai", "10A37F", "https://chatgpt.com/", "https://chatgpt.com/", "https://chatgpt.com/", ["gpt", "openai chat"]),
+    "claude": ("Claude", "claude", "D97757", "https://claude.ai/", "https://claude.ai/", "https://claude.ai/", ["anthropic"]),
+    "gemini": ("Gemini", "googlegemini", "8E75FF", "https://gemini.google.com/app", "https://gemini.google.com/app", "https://gemini.google.com/app", ["google ai"]),
     "youtube": ("YouTube", "youtube", "FF0000", _intent("www.youtube.com/", "com.google.android.youtube", "https://www.youtube.com"), "youtube://", "https://www.youtube.com", ["yt"]),
     "x": ("X", "x", "FFFFFF", _intent("x.com/", "com.twitter.android", "https://x.com"), "twitter://", "https://x.com", ["twitter"]),
     "facebook": ("Facebook", "facebook", "1877F2", _intent("www.facebook.com/", "com.facebook.katana", "https://www.facebook.com"), "fb://", "https://www.facebook.com", ["fb"]),
@@ -32,14 +36,14 @@ APPS = {
     "tiktok": ("TikTok", "tiktok", "FFFFFF", _intent("www.tiktok.com/", "com.zhiliaoapp.musically", "https://www.tiktok.com"), "snssdk1233://", "https://www.tiktok.com", []),
     "maps": ("Maps", "googlemaps", "4285F4", "geo:0,0?q=", "comgooglemaps://", "https://maps.google.com", ["google maps", "map"]),
     "chrome": ("Chrome", "googlechrome", "4285F4", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_BROWSER", "https://www.google.com"), "googlechrome://", "https://www.google.com", ["browser"]),
-    "calculator": ("Calculator", "🧮", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR", G + "calculator"), "", G + "calculator", ["calc"]),
-    "camera": ("Camera", "📷", "", _sys("action=android.media.action.STILL_IMAGE_CAMERA", "https://www.google.com"), "", "https://www.google.com", []),
-    "clock": ("Clock", "⏰", "", _sys("action=android.intent.action.SHOW_ALARMS", G + "timer"), "clock-alarm://", G + "timer", ["alarm", "timer", "stopwatch"]),
-    "calendar": ("Calendar", "📅", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CALENDAR", "https://calendar.google.com"), "calshow://", "https://calendar.google.com", []),
-    "gallery": ("Gallery", "🖼️", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_GALLERY", "https://photos.google.com"), "photos-redirect://", "https://photos.google.com", ["photos"]),
-    "contacts": ("Contacts", "👤", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CONTACTS", "https://contacts.google.com"), "", "https://contacts.google.com", []),
-    "music": ("Music", "🎵", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_MUSIC", "https://music.youtube.com"), "music://", "https://music.youtube.com", []),
-    "settings": ("Settings", "⚙️", "", _sys("action=android.settings.SETTINGS", "https://www.google.com"), "App-Prefs:", "https://www.google.com", []),
+    "calculator": ("Calculator", "sys:calculator", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CALCULATOR", G + "calculator"), "", G + "calculator", ["calc"]),
+    "camera": ("Camera", "sys:camera", "", _sys("action=android.media.action.STILL_IMAGE_CAMERA", "https://www.google.com"), "", "https://www.google.com", []),
+    "clock": ("Clock", "sys:clock", "", _sys("action=android.intent.action.SHOW_ALARMS", G + "timer"), "clock-alarm://", G + "timer", ["alarm", "timer", "stopwatch"]),
+    "calendar": ("Calendar", "sys:calendar", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CALENDAR", "https://calendar.google.com"), "calshow://", "https://calendar.google.com", []),
+    "gallery": ("Gallery", "sys:image", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_GALLERY", "https://photos.google.com"), "photos-redirect://", "https://photos.google.com", ["photos"]),
+    "contacts": ("Contacts", "sys:user", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_CONTACTS", "https://contacts.google.com"), "", "https://contacts.google.com", []),
+    "music": ("Music", "sys:music", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_MUSIC", "https://music.youtube.com"), "music://", "https://music.youtube.com", []),
+    "settings": ("Settings", "sys:gear", "", _sys("action=android.settings.SETTINGS", "https://www.google.com"), "App-Prefs:", "https://www.google.com", []),
     "drive": ("Google Drive", "googledrive", "4285F4", _intent("drive.google.com/", "com.google.android.apps.docs", "https://drive.google.com"), "googledrive://", "https://drive.google.com", ["google drive"]),
     "docs": ("Docs", "googledocs", "4285F4", _intent("docs.google.com/document/", "com.google.android.apps.docs.editors.docs", "https://docs.google.com"), "googledocs://", "https://docs.google.com", ["google docs"]),
     "sheets": ("Sheets", "googlesheets", "34A853", _intent("docs.google.com/spreadsheets/", "com.google.android.apps.docs.editors.sheets", "https://docs.google.com/spreadsheets"), "googlesheets://", "https://docs.google.com/spreadsheets", ["google sheets"]),
@@ -57,11 +61,11 @@ APPS = {
     "phonepe": ("PhonePe", "phonepe", "5F259F", _intent("www.phonepe.com/", "com.phonepe.app", "https://www.phonepe.com"), "phonepe://", "https://www.phonepe.com", []),
     "gpay": ("Google Pay", "googlepay", "4285F4", _intent("pay.google.com/", "com.google.android.apps.nbu.paisa.user", "https://pay.google.com"), "gpay://", "https://pay.google.com", ["google pay", "g pay"]),
     "playstore": ("Play Store", "googleplay", "34A853", "market://search?q=", "https://apps.apple.com", "https://play.google.com", ["play store", "google play"]),
-    "files": ("Files", "📁", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_FILES", "https://drive.google.com"), "shareddocuments://", "https://drive.google.com", ["file manager"]),
-    "notes": ("Notes", "📝", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_BROWSER", "https://keep.google.com"), "mobilenotes://", "https://keep.google.com", ["keep"]),
-    "weather": ("Weather", "🌦️", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_WEATHER", G + "weather"), "weather://", G + "weather", []),
-    "phone": ("Phone", "📞", "", "tel:", "tel:", "tel:", ["dialer"]),
-    "messages": ("Messages", "💬", "", "sms:", "sms:", "sms:", ["sms", "texts"]),
+    "files": ("Files", "sys:folder", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_FILES", "https://drive.google.com"), "shareddocuments://", "https://drive.google.com", ["file manager"]),
+    "notes": ("Notes", "sys:note", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_BROWSER", "https://keep.google.com"), "mobilenotes://", "https://keep.google.com", ["keep"]),
+    "weather": ("Weather", "sys:cloudsun", "", _sys("action=android.intent.action.MAIN;category=android.intent.category.APP_WEATHER", G + "weather"), "weather://", G + "weather", []),
+    "phone": ("Phone", "sys:phone", "", "tel:", "tel:", "tel:", ["dialer"]),
+    "messages": ("Messages", "sys:message", "", "sms:", "sms:", "sms:", ["sms", "texts"]),
 }
 
 ALIASES = {}
@@ -94,7 +98,7 @@ def contact_action(kind, number, text=""):
         uri, label = f"sms:{num}?body={quote(text)}", "MESSAGE"
     else:
         uri, label = f"https://wa.me/{num.lstrip('+')}?text={quote(text)}", "WHATSAPP"
-    return {"type": "open_app", "app": kind, "label": f"{label} {num}", "name": label.title(), "icon": "📞", "color": "",
+    return {"type": "open_app", "app": kind, "label": f"{label} {num}", "name": label.title(), "icon": "sys:phone", "color": "",
             "uri": uri, "ios": uri, "web": uri, "auto": True}
 
 

@@ -1,4 +1,4 @@
-# AXO Assistant — Pydroid 3 / Render
+# AXO Assistant — V16 — Pydroid 3 / Render
 
 A Flask-backed personal assistant with a chat-first interface, local conversation history, inline rich results, voice input and optional AI chat through OpenRouter, Google Gemini, OpenAI, Groq or a custom OpenAI-compatible endpoint.
 
@@ -86,3 +86,24 @@ Maps use Leaflet, Esri World Imagery and OpenStreetMap tiles. Attribution is sho
 - Chat history, preferences and connection keys are browser-local; they do not sync automatically. Saved API/integration keys are not encrypted by Local Storage. Clear them from Settings → Data before using a shared device.
 - Edge TTS requires an internet connection; browser speech synthesis is used as a fallback.
 - Local Storage is browser-side storage, not encrypted cloud backup. Avoid entering passwords or other secrets into chat.
+
+
+## AXO v16 updates
+
+- ChatGPT, Claude and Gemini are available as browser-based links in Apps and Settings. They do not need an AXO API key to open. The optional context handoff copies only recent chat messages, saved AXO notes and approved memories after the user taps the relevant button; the user pastes the copied text into the external site. AXO cannot read or control private conversations inside those services.
+- Questions such as “what is …?” and “who is …?” now try Wikipedia first without an AI key. If Wikipedia has no usable result, AXO tries the public DuckDuckGo HTML search endpoint. If both public sources fail, the request can continue to the configured AI provider.
+- Public web search now returns source-linked result cards when the anonymous search endpoint returns usable records, with a selected-engine browser link as a fallback.
+- Settings includes a plugin gallery with public endpoints for books, definitions, related words, GitHub repositories, TV, anime, country facts, species and spaceflight news. Add a built-in plugin, enter a query and press Run to call its fixed public endpoint directly without an AXO AI key. Natural-language tool selection still needs an AI provider key. Custom plugin endpoints remain HTTPS-only.
+- Privacy details and an expanded About AXO / AXO Bots guide explain browser storage, credential handling, public lookups, external AI handoff, server storage, bots, tools and the limits of browser shortcuts.
+
+### Browser AI and privacy notes
+
+The browser AI handoff is a manual copy-and-open convenience, not a deep integration or API connection. It cannot automatically transfer live Firebase, Gmail or third-party account contents. Review the context before pasting it into an external AI service. Local browser storage, including saved credentials in this build, is not encrypted by AXO. Use a private device and clear keys before handing the device to someone else.
+
+### Public search behaviour
+
+The encyclopedia path is source-first: a clear Wikipedia summary is shown with its source link. If unavailable, AXO tries public search. Search providers can change their HTML, throttle requests or block automated access; when no result cards are returned AXO falls back to the chosen search-engine page or configured AI connection where available. Check original sources for important claims.
+
+### User data files
+
+The release ZIP intentionally excludes `notes.json` and any `.env` file so saved personal notes and local secrets are not bundled into a code archive. The app will recreate its notes file when a note is saved. Keep a private backup of any existing `notes.json` you need to preserve; do not commit it to GitHub.
