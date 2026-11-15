@@ -142,6 +142,7 @@ function loadConversation(id) {
   $('#welcomeScreen')?.classList.toggle('hidden', found.messages.length > 0);
   found.messages.forEach(message => {
     const handle = addMessage(message.role, message.content || '', message.extras || null);
+    if (message.image) attachPhoto(handle.bubble, message.image);
     if (message.role === 'assistant' && message.extras) renderIntelligence(message.extras, handle.richHost);
   });
   renderChatHistory($('#historySearch')?.value || '');
@@ -353,7 +354,7 @@ async function sendMessage(rawText) {
     assistantHandle.bubble.textContent = reply;
     assistantHandle.bubble.classList.remove('thinking');
     const extras = {};
-    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'charts', 'trace', 'source', 'intent'].forEach(key => {
+    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'charts', 'invoice', 'trace', 'source', 'intent'].forEach(key => {
       if (data[key] !== undefined) extras[key] = (key === 'images' ? data[key].slice(0, 12) : key === 'news' ? data[key].slice(0, 10) : data[key]);
     });
     chat.messages.push({ role: 'assistant', content: reply, extras, createdAt: Date.now() });
@@ -455,6 +456,7 @@ function launchApp(a) {
 function appLogo(a) {
   const box = document.createElement('span'); box.className = 'app-logo';
   const icon = a.icon || '';
+  if (icon.startsWith('sys:')) { box.innerHTML = axIcon(icon.slice(4), 26); return box; }
   if (/^[a-z0-9]+$/i.test(icon) && icon.length > 2) {
     const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy';
     img.src = `https://cdn.simpleicons.org/${icon}/${a.color || 'ffffff'}`;
@@ -478,8 +480,8 @@ function renderConfirm(c, host) {
       const res = await fetch('/api/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind: c.kind, payload: p, integrations: integrationsPayload() }) });
       const d = await res.json(); if (!res.ok || !d.ok) throw new Error(d.error || 'Failed');
-      row.textContent = '✓ ' + d.message; toast(d.message);
-    } catch (error) { row.textContent = '✗ ' + error.message; }
+      row.textContent = 'Done · ' + d.message; toast(d.message);
+    } catch (error) { row.textContent = 'Failed · ' + error.message; }
   });
   no.addEventListener('click', () => { row.textContent = 'Cancelled.'; });
   row.append(go, no); card.append(title, pre, row); host.append(card);
@@ -490,7 +492,7 @@ function scheduleReminder(r) {
     try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* ignore */ }
   }
   setTimeout(() => {
-    toast(`⏰ ${r.text}`);
+    toast(`Reminder: ${r.text}`);
     try { if (settings.notifications && 'Notification' in window && Notification.permission === 'granted') new Notification('AXO reminder', { body: r.text, icon: LOGO_URL }); } catch { /* ignore */ }
     speak(`Reminder: ${r.text}`);
   }, ms);
@@ -635,7 +637,7 @@ function renderDataCard(card, host) {
     iss: 'ISS TRACKING', currency: 'CURRENCY CONVERSION', country: 'COUNTRY PROFILE',
     world_bank: 'GLOBAL DEVELOPMENT DATA', sun_times: 'SUN & DAYLIGHT',
     natural_events: 'EARTH OBSERVATION', pokemon: 'POKÉDEX', trivia: 'TRIVIA',
-    word_relations: 'WORD EXPLORER', species: 'BIODIVERSITY'
+    word_relations: 'WORD EXPLORER', species: 'BIODIVERSITY', web_search: 'PUBLIC WEB SEARCH'
   };
   const block = resultBlock(types[card.type] || 'DATA RESULT', card.location || card.title || '');
   const body = document.createElement('div'); body.className = 'result-body';
@@ -742,7 +744,7 @@ function renderDataCard(card, host) {
     } else {
       itemList(body, items, {
         title: x => x.title || x.full_name || 'Result',
-        description: x => [x.description || '', x.language || '', x.stars !== undefined ? `${Number(x.stars).toLocaleString()} stars` : ''].filter(Boolean).join(' · '),
+        description: x => [x.snippet || '', x.description || '', x.language || '', x.source || '', x.stars !== undefined ? `${Number(x.stars).toLocaleString()} stars` : ''].filter(Boolean).join(' · '),
         url: x => x.url
       });
     }
@@ -851,7 +853,7 @@ async function loadLibrary(type) {
     container.innerHTML = '';
     Object.entries(items).forEach(([name, url]) => {
       const card = document.createElement('article'); card.className = 'library-card';
-      const symbol = document.createElement('div'); symbol.className = 'library-symbol'; symbol.textContent = type === 'music' ? '♫' : '▷';
+      const symbol = document.createElement('div'); symbol.className = 'library-symbol'; symbol.innerHTML = axIcon(type === 'music' ? 'music' : 'play', 24);
       const title = document.createElement('div'); title.className = 'library-title'; title.textContent = name.replaceAll('_', ' ');
       const sub = document.createElement('div'); sub.className = 'library-sub'; sub.textContent = type === 'music' ? 'Saved music link' : 'Saved video link';
       const open = document.createElement('button'); open.className = 'library-open'; open.textContent = type === 'music' ? 'PLAY TRACK ↗' : 'WATCH VIDEO ↗';
@@ -1065,8 +1067,8 @@ $$('[data-test]').forEach(b => b.addEventListener('click', async () => {
   try {
     const res = await fetch('/api/test', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ what, ai: settings.ai, gmail: settings.gmail, github: settings.github, firebase: settings.firebase, telegram: settings.telegram }) });
-    const d = await res.json(); msgEl.textContent = res.ok && d.ok ? '✓ ' + d.message : '✗ ' + (d.error || 'Failed');
-  } catch (error) { msgEl.textContent = '✗ ' + error.message; }
+    const d = await res.json(); msgEl.textContent = res.ok && d.ok ? 'Done · ' + d.message : 'Failed · ' + (d.error || 'Failed');
+  } catch (error) { msgEl.textContent = 'Failed · ' + error.message; }
 }));
 $('#fetchModels')?.addEventListener('click', async () => {
   const button = $('#fetchModels'), label = $('#modelFetchMsg');
@@ -1094,7 +1096,7 @@ $('#fetchModels')?.addEventListener('click', async () => {
       label.title = models.slice(0, 30).join(' · ');
       toast('Model list loaded. Choose a model from the field suggestions.');
     }
-  } catch (error) { label.textContent = '✗ ' + error.message; }
+  } catch (error) { label.textContent = 'Failed · ' + error.message; }
   finally { button.disabled = false; }
 });
 $('#resetSettings')?.addEventListener('click', () => {

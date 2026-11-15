@@ -187,8 +187,8 @@ $('#bfDelete')?.addEventListener('click', () => {
   const id = selBot; bots = bots.filter(b => b.id !== id); bots.forEach(b => { if (b.reportsTo === id) b.reportsTo = ''; });
   delete botChats[id]; selBot = bots[0].id; saveBots(); renderStrip(); fillForm(); rebuildStudioBot(); renderSheet(); renderBotMsgs();
 });
-$$('#botsTabs button').forEach(b => b.addEventListener('click', () => {
-  $$('#botsTabs button').forEach(x => x.classList.toggle('on', x === b));
+$$('#botsTabs button[data-bt]').forEach(b => b.addEventListener('click', () => {
+  $$('#botsTabs button[data-bt]').forEach(x => x.classList.toggle('on', x === b));
   $('#botsStudio').hidden = b.dataset.bt !== 'studio'; $('#botsSheet').hidden = b.dataset.bt !== 'sheet'; if (b.dataset.bt === 'sheet') renderSheet();
 }));
 function renderSheet() {
@@ -230,7 +230,7 @@ $('#botChatForm')?.addEventListener('submit', async e => {
     wait.remove(); nodeActive[bot.id] = Date.now() + 8000;
     (d.trace || []).forEach(t => { const tb = bots.find(x => x.name === t.bot); if (tb) nodeActive[tb.id] = Date.now() + 8000; });
     (d.trace || []).forEach(t => addBotBubble('trace', `↳ ${t.bot}: ${t.task}`));
-    const extras = {}; ['action', 'actions', 'confirms', 'images', 'map', 'cards', 'charts', 'news', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
+    const extras = {}; ['action', 'actions', 'confirms', 'images', 'map', 'cards', 'charts', 'invoice', 'news', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
     addBotBubble('b', d.reply || 'Done.', extras); hist.push({ role: 'assistant', content: d.reply || 'Done.', extras });
     (d.reminders || []).forEach(scheduleReminder);
     const app = (d.actions || []).find(a => a.type === 'open_app'); if (app) setTimeout(() => launchApp(app), 250);
@@ -358,7 +358,7 @@ async function vmAsk(text) {
   try {
     const chat = currentChat(); addMessage('user', text); chat.messages.push({ role: 'user', content: text, createdAt: Date.now() });
     const h = addMessage('assistant', data.reply || 'Done.'); const extras = {};
-    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'charts', 'source', 'intent'].forEach(k => { if (data[k] !== undefined) extras[k] = data[k]; });
+    ['action', 'actions', 'confirms', 'reminders', 'news', 'images', 'map', 'cards', 'charts', 'invoice', 'source', 'intent'].forEach(k => { if (data[k] !== undefined) extras[k] = data[k]; });
     renderIntelligence(extras, h.richHost); chat.messages.push({ role: 'assistant', content: data.reply || 'Done.', extras, createdAt: Date.now() }); chat.updatedAt = Date.now(); persistConversations();
   } catch { /* ignore */ }
   (data.reminders || []).forEach(scheduleReminder);
@@ -392,15 +392,15 @@ function vmDraw(ts) {
   else if (VM.state === 'thinking') target = .12 + .08 * Math.sin(t * 4);
   VM.level += (target - VM.level) * .22;
   ctx.clearRect(0, 0, S, S);
-  const ang = t * (.25 + VM.level * .6), ca = Math.cos(ang), sa = Math.sin(ang), tilt = .35, ct = Math.cos(tilt), st = Math.sin(tilt);
-  const hue = VM.state === 'thinking' ? '170,200,255' : VM.state === 'speaking' ? '190,255,230' : '205,230,222';
+  VM.ang = (VM.ang || 0) + .004 + VM.level * .0015; const ang = VM.ang, ca = Math.cos(ang), sa = Math.sin(ang), tilt = .35, ct = Math.cos(tilt), st = Math.sin(tilt);
+  const HUES = { mint: '205,235,225', white: '235,235,240', blue: '165,200,255', pink: '255,190,225', gold: '255,225,150' }, hue = HUES[settings.sphereColor] || HUES.mint, K = settings.sphereMove === undefined ? .08 : Number(settings.sphereMove);
   const out = VM.pts.map(p => {
-    const bump = 1 + VM.level * .55 * Math.sin(p.ph + t * 6 + p.y * 5) + VM.level * .25 * Math.sin(p.x * 7 + t * 4);
+    const bump = 1 + K * VM.level * (.5 * Math.sin(p.ph + t * 3 + p.y * 4) + .25 * Math.sin(p.x * 5 + t * 2)) + K * VM.level * .35;
     let x = p.x * bump, y = p.y * bump, z = p.z * bump;
     const x1 = x * ca + z * sa, z1 = -x * sa + z * ca; const y2 = y * ct - z1 * st, z2 = y * st + z1 * ct;
     const k = 1.8 / (1.8 + z2 * .6); return { sx: S / 2 + x1 * R * k, sy: S / 2 + y2 * R * k, z: z2, sz: p.sz, k };
   }).sort((a, b) => a.z - b.z);
-  out.forEach(d => { const dp = (d.z + 1) / 2; ctx.globalAlpha = .18 + .82 * dp; ctx.fillStyle = `rgb(${hue})`; ctx.beginPath(); ctx.arc(d.sx, d.sy, (1.6 + 4.2 * dp) * d.sz * d.k * (1 + VM.level * .6), 0, 6.283); ctx.fill(); });
+  out.forEach(d => { const dp = (d.z + 1) / 2; ctx.globalAlpha = .18 + .82 * dp; ctx.fillStyle = `rgb(${hue})`; ctx.beginPath(); ctx.arc(d.sx, d.sy, (1.6 + 4.2 * dp) * d.sz * d.k * (1 + VM.level * K * .8), 0, 6.283); ctx.fill(); });
   ctx.globalAlpha = 1;
 }
 
@@ -459,7 +459,7 @@ async function neuralSay(text) {
     if (!r.ok) throw new Error('tts'); const url = URL.createObjectURL(await r.blob());
     if (axuAudio) axuAudio.pause(); axuAudio = new Audio(url); axuAudio.onended = () => URL.revokeObjectURL(url);
     try { await axuAudio.play(); return 'ok'; } catch { return 'blocked'; }
-  } catch { fallbackSpeak(text); return 'fail'; }
+  } catch { if (!neuralSay.retried) { neuralSay.retried = true; setTimeout(() => { neuralSay.retried = false; }, 15000); return neuralSay(text); } toast('Voice service is unavailable right now.'); return 'fail'; }
 }
 playGreeting = function () { playWelcomeChime(); if (settings.greetSpeak) neuralSay(`${greetingText()}. How can I help?`); };
 startGreeting = function () {
@@ -478,15 +478,15 @@ startGreeting = function () {
 function renderConnectStrip() {
   const scr = $('#welcomeScreen'); if (!scr) return; let strip = $('#connectStrip');
   if (!strip) { strip = document.createElement('div'); strip.id = 'connectStrip'; strip.className = 'connect-strip'; scr.append(strip); }
-  strip.innerHTML = ''; const items = [['☀️ Daily briefing', '__brief']];
-  if (window.__installEvt) items.push(['📲 Install app', '__install']);
-  if (!(settings.ai || {}).key) items.push(['✨ Add AI key — unlock the agent', 'ai']);
+  strip.innerHTML = ''; const items = [['sun|Daily briefing', '__brief']];
+  if (window.__installEvt) items.push(['download|Install app', '__install']);
+  if (!(settings.ai || {}).key) items.push(['sparkles|Add AI key to unlock the agent', 'ai']);
   const want = new Set(settings.interests || []);
-  if (want.has('mail') && !(settings.gmail || {}).email) items.push(['✉️ Connect email', 'integrations']);
-  if (want.has('code') && !(settings.github || {}).token) items.push(['🐙 Connect GitHub', 'integrations']);
-  if (want.has('biz') && !(settings.firebase || {}).service_account) items.push(['🔥 Connect Firebase', 'integrations']);
-  if (want.has('calls') && !settings.contactsText) items.push(['📞 Add contacts', 'contacts']);
-  items.slice(0, 4).forEach(([label, sec]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = () => { if (sec === '__brief') sendMessage('daily briefing'); else if (sec === '__install') installApp(); else { openSettings(); showSettingsSection(sec); } }; strip.append(b); });
+  if (want.has('mail') && !(settings.gmail || {}).email) items.push(['mail|Connect email', 'integrations']);
+  if (want.has('code') && !(settings.github || {}).token) items.push(['github|Connect GitHub', 'integrations']);
+  if (want.has('biz') && !(settings.firebase || {}).service_account) items.push(['flame|Connect Firebase', 'integrations']);
+  if (want.has('calls') && !settings.contactsText) items.push(['phone|Add contacts', 'contacts']);
+  items.slice(0, 4).forEach(([label, sec]) => { const b = document.createElement('button'); b.type = 'button'; b.append(iconLabel(label)); b.onclick = () => { if (sec === '__brief') sendMessage('daily briefing'); else if (sec === '__install') installApp(); else { openSettings(); showSettingsSection(sec); } }; strip.append(b); });
 }
 const _rw = renderWelcome; renderWelcome = function () { _rw(); renderConnectStrip(); };
 
@@ -542,12 +542,12 @@ async function runSchedule(s) {
       ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() }) });
     const d = await res.json(); if (!d.ok) return;
     try {
-      const chat = currentChat(); addMessage('user', `⏰ ${s.prompt}`); chat.messages.push({ role: 'user', content: `⏰ ${s.prompt}`, createdAt: Date.now() });
+      const chat = currentChat(); addMessage('user', `Scheduled: ${s.prompt}`); chat.messages.push({ role: 'user', content: `Scheduled: ${s.prompt}`, createdAt: Date.now() });
       const h = addMessage('assistant', d.reply || 'Done.'); const extras = {};
-      ['action', 'actions', 'confirms', 'news', 'images', 'map', 'cards', 'charts', 'source', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
+      ['action', 'actions', 'confirms', 'news', 'images', 'map', 'cards', 'charts', 'invoice', 'source', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
       renderIntelligence(extras, h.richHost); chat.messages.push({ role: 'assistant', content: d.reply || 'Done.', extras, createdAt: Date.now() }); chat.updatedAt = Date.now(); persistConversations();
     } catch { /* ignore */ }
-    toast(`⏰ ${(d.reply || '').slice(0, 80)}`);
+    toast(`Scheduled: ${(d.reply || '').slice(0, 80)}`);
     try { if ('Notification' in window && Notification.permission === 'granted') new Notification('AXO', { body: (d.reply || '').slice(0, 140), icon: LOGO_URL }); } catch { /* ignore */ }
     if (settings.voiceReplies || settings.greetSpeak) neuralSay(String(d.reply || '').replace(/https?:\/\/\S+/g, 'link').slice(0, 500));
   } catch { /* ignore */ }
