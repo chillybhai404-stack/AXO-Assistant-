@@ -18,8 +18,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-<div id="axoSplash"><div class="sp-in"><span class="ring"></span><span class="ring r2"></span><img src="{{ url_for('static', filename='logo.png') }}" alt=""><h2><span style="animation-delay:.35s">A</span><span style="animation-delay:.5s">X</span><span style="animation-delay:.65s">O</span></h2><p>Your personal assistant</p><div class="bar"><i></i></div></div></div>
-<script>setTimeout(function(){var e=document.getElementById("axoSplash");if(e)e.classList.add("out")},4500)</script>
   <svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -192,6 +190,7 @@
         <button data-sec="library" type="button">Library</button>
         <button data-sec="data" type="button">Data</button>
         <button data-sec="privacy" type="button">Privacy</button>
+        <button data-sec="tutorials" type="button">Tutorials</button>
         <button data-sec="about" type="button">About</button>
       </nav>
       <main class="sp-content">
@@ -203,7 +202,9 @@
           <label class="setting-row"><span><strong>Show greeting</strong><small>“Good morning, …” on the home screen.</small></span><input id="greetShowSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Speak greeting aloud</strong><small>When you open AXO. Some browsers need one tap before audio can play.</small></span><input id="greetSpeakSetting" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>Welcome chime</strong><small>Play a soft original sound when AXO greets you.</small></span><input id="greetChimeSetting" type="checkbox" class="toggle-input"></label>
-          <label class="setting-row"><span><strong>Greeting voice</strong><small>Only Ryan or Sonia speak the welcome. Chat replies keep your normal voice.</small></span><select id="greetVoiceSetting"><option value="en-GB-RyanNeural">Ryan (male)</option><option value="en-GB-SoniaNeural">Sonia (female)</option></select></label>
+          <label class="setting-row"><span><strong>Greeting voice</strong><small>Only Ryan or Sonia speak the welcome. “Random” alternates each day.</small></span><select id="greetVoiceSetting"><option value="en-GB-RyanNeural">Ryan (male)</option><option value="en-GB-SoniaNeural">Sonia (female)</option><option value="random">Random each day</option></select></label>
+          <label class="setting-row"><span><strong>Greeting style</strong><small>Short, full (with your daily briefing), or silent.</small></span><select id="greetStyleSetting"><option value="short">Short — “Good morning, Boss.”</option><option value="full">Full — with weather, mail and reminders</option><option value="silent">Silent — animation only</option></select></label>
+          <label class="setting-row"><span><strong>Open workflows in</strong><small>A new window, or a side panel inside AXO.</small></span><select id="wfOpenSetting"><option value="window">New window</option><option value="panel">Side panel</option></select></label>
           <div class="setting-row"><span><strong>Replay intro tour</strong><small>Arrows showing what everything does.</small></span><button class="pill-button" id="tourReplay" type="button">Replay</button></div>
           <div class="setting-row"><span><strong>Preview greeting</strong><small id="greetPreview"></small></span><button class="pill-button" id="greetTest" type="button">Preview</button></div>
         </section>
@@ -236,6 +237,7 @@
           <label class="setting-row"><span><strong>Browser notifications</strong><small>Show reminders as notifications when allowed.</small></span><input id="notificationsSetting" type="checkbox" class="toggle-input"></label>
           <p class="settings-footnote">Examples: “play Skyfall”, “watch a space documentary”, “open Google Calendar”, or name a service in your request. AXO only opens supported links; it does not control another service's private account data.</p>
         </section>
+        <section class="sp-sec" id="sec-tutorials"><h3>Tutorials</h3><p style="color:var(--muted);font-size:13px;margin:0 0 10px">Pick what you want to learn. Each one points at the real buttons with arrows.</p><div id="tutList"></div></section>
         <section class="sp-sec" id="sec-library"><h3>Library</h3>
           <div class="setting-row"><span><strong>Music links</strong><small id="musicCount">Add songs with a name and link.</small></span><button class="pill-button" data-go="music" type="button">Manage</button></div>
           <div class="setting-row"><span><strong>Video links</strong><small id="videoCount">Add videos with a name and link.</small></span><button class="pill-button" data-go="videos" type="button">Manage</button></div>
@@ -426,6 +428,7 @@
   <script src="{{ url_for('static', filename='extra.js') }}"></script>
   <script src="{{ url_for('static', filename='extra2.js') }}"></script>
   <script src="{{ url_for('static', filename='ui.js') }}"></script>
+  <script src="{{ url_for('static', filename='wfrun.js') }}"></script>
   <script src="{{ url_for('static', filename='boost.js') }}"></script>
 </body>
 </html>

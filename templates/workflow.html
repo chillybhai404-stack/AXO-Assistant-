@@ -2,125 +2,168 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AXO Workflow</title>
 <style>
-:root{--bg:#0b0b0d;--card:#1b1b1f;--line:#2c2c33;--text:#f1f1f2;--muted:#8d8d95;--blue:#3989f6;--green:#5ecb91;--amber:#f2b84b}
+:root{--bg:#0b0b0d;--card:#1b1b1f;--card2:#25252c;--line:#2c2c33;--text:#f1f1f2;--muted:#8d8d95;--blue:#3989f6;--green:#5ecb91;--amber:#f2b84b;--red:#ff6b6b;--dot:#2a2a31}
+html.light{--bg:#f4f5f8;--card:#fff;--card2:#eef0f5;--line:#d9dce5;--text:#15161a;--muted:#6b6f7b;--dot:#d3d6df}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}
-#bar{position:fixed;top:0;left:0;right:0;height:54px;display:flex;align-items:center;gap:10px;padding:0 16px;background:rgba(11,11,13,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:5}
-#bar h1{font-size:15px;margin:0;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#bar button{background:#26262c;border:1px solid var(--line);color:var(--text);border-radius:999px;padding:7px 14px;font-size:13px;cursor:pointer}
-#bar button.go{background:var(--blue);border-color:var(--blue)}
-#stage{position:absolute;inset:54px 0 0 0;overflow:auto;background-image:radial-gradient(#2a2a31 1px,transparent 1px);background-size:22px 22px}
-#canvas{position:relative;margin:0 auto}
-svg#wires{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.wire{fill:none;stroke:#3a5f96;stroke-width:2;stroke-dasharray:var(--len);stroke-dashoffset:var(--len);transition:stroke-dashoffset .6s ease}
-.wire.on{stroke-dashoffset:0}.wire.hot{stroke:var(--blue);filter:drop-shadow(0 0 4px var(--blue))}
-.wl{position:absolute;font-size:11px;color:var(--muted);background:var(--bg);padding:1px 6px;border-radius:8px;transform:translate(-50%,-50%);opacity:0;transition:opacity .4s}
-.wl.on{opacity:1}
-.node{position:absolute;width:250px;min-height:70px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;display:flex;gap:12px;align-items:center;opacity:0;transform:translateY(14px) scale(.96);transition:all .45s cubic-bezier(.2,.9,.3,1.2)}
-.node.on{opacity:1;transform:none}
-.node .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;flex:none;background:#26262c}
+#bar{position:fixed;top:0;left:0;right:0;min-height:54px;display:flex;align-items:center;gap:7px;padding:8px 12px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:6;flex-wrap:wrap}
+#ttl{font-size:15px;font-weight:600;background:none;border:0;color:var(--text);flex:1;min-width:120px;outline:none}
+button,select,input,textarea{font:inherit;color:var(--text)}
+.b{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap}.b.go{background:var(--blue);border-color:var(--blue);color:#fff}.b:disabled{opacity:.5}
+#stage{position:absolute;inset:54px 0 0 0;overflow:auto;background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:22px 22px}
+#zoom{position:relative;transform-origin:0 0}
+svg#wires{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.wire{fill:none;stroke:#3a5f96;stroke-width:2;opacity:0;transition:opacity .5s}.wire.on{opacity:1}.wire.hot{stroke:var(--blue);filter:drop-shadow(0 0 4px var(--blue))}
+.wl{position:absolute;font-size:11px;color:var(--muted);background:var(--bg);padding:1px 6px;border-radius:8px;transform:translate(-50%,-50%)}
+.node{position:absolute;width:250px;min-height:70px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;display:flex;gap:12px;align-items:center;opacity:0;transform:scale(.94);transition:opacity .4s,transform .4s,box-shadow .3s,border-color .3s;cursor:grab;user-select:none;touch-action:none}
+.node.on{opacity:1;transform:none}.node.sel{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.node .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;flex:none;background:var(--card2)}
 .node .ic svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.node.trigger .ic{color:var(--green);background:#1d3329}.node.action .ic{color:#6ea8ff;background:#1c2a44}.node.end .ic{color:var(--green);background:#1d3329}.node.condition .ic{color:#4da3ff}
+.node.trigger .ic,.node.end .ic{color:var(--green)}.node.action .ic{color:#5b9bff}.node.condition .ic{display:none}
 .node b{display:block;font-size:14px;font-weight:600}.node small{color:var(--muted);font-size:12px}
-.node .st{display:block;font-size:11.5px;margin-top:3px;color:var(--green)}
-.node.condition{border-radius:0;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);background:#25252c;justify-content:center;text-align:center;width:250px;min-height:110px;border:0;padding:0 50px}.node.condition .ic{display:none}.node.condition b{font-size:13px}.node.condition .st{font-size:10.5px}
-.node.running{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 0 26px rgba(57,137,246,.55)}
-.node.condition.running{background:#223250}
-.node.done .st{display:block}
-.node.warn .st{color:var(--amber)}
-#msg{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1b1b1f;border:1px solid var(--line);padding:9px 16px;border-radius:999px;font-size:13px;color:var(--muted);z-index:5}
-#intro{position:fixed;inset:54px 0 0;display:grid;place-items:center;z-index:4;background:var(--bg);transition:opacity .5s}
-#intro div{text-align:center;color:var(--muted);font-size:14px}
-#intro i{display:block;width:38px;height:38px;margin:0 auto 14px;border:3px solid #2c2c33;border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
+.node .st{display:none;font-size:11.5px;margin-top:3px}.node.ok .st{display:block;color:var(--green)}.node.err .st{display:block;color:var(--amber)}.node.err{border-color:var(--amber)}
+.node.condition{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);border:0;background:var(--card2);justify-content:center;text-align:center;min-height:110px;padding:0 48px}
+.node.running{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 0 26px color-mix(in srgb,var(--blue) 60%,transparent)}
+#panel{position:fixed;top:54px;right:0;bottom:0;width:310px;background:var(--card);border-left:1px solid var(--line);padding:14px;overflow:auto;z-index:5;transform:translateX(105%);transition:transform .3s}
+#panel.open{transform:none}#panel h3{margin:0 0 10px;font-size:14px}
+#panel label{display:block;font-size:12px;color:var(--muted);margin:10px 0 3px}
+#panel input,#panel select,#panel textarea{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13px}
+#panel textarea{min-height:64px;resize:vertical}
+.hist{font-size:12px;color:var(--muted);margin-top:4px}.hist .ok{color:var(--green)}.hist .er{color:var(--amber)}
+#msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);padding:8px 16px;border-radius:999px;font-size:13px;color:var(--muted);z-index:7;max-width:90vw;text-align:center}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;display:none;place-items:center}.modal.on{display:grid}
+.modal .box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;width:min(420px,92vw);max-height:80vh;overflow:auto}
+.modal .row{display:flex;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}.modal .row span{flex:1}
+#intro{position:fixed;inset:54px 0 0;display:grid;place-items:center;z-index:4;background:var(--bg);color:var(--muted);font-size:14px;text-align:center}
+#intro i{display:block;width:36px;height:36px;margin:0 auto 14px;border:3px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:700px){#panel{top:auto;left:0;width:auto;height:58vh;border-left:0;border-top:1px solid var(--line);border-radius:18px 18px 0 0;transform:translateY(105%)}#panel.open{transform:none}.b{padding:6px 10px;font-size:12px}}
 </style></head><body>
-<div id="bar"><h1 id="ttl">Building workflow…</h1><button id="again">New idea</button><button id="run" class="go">▶ Run</button><button id="exp">Save PNG-free JSON</button></div>
+<div id="bar"><input id="ttl" value="Workflow" aria-label="Workflow name">
+<button class="b" id="bTpl">Templates</button><button class="b" id="bAdd">+ Step</button><button class="b go" id="bRun">▶ Run</button><button class="b" id="bSave">Save</button><button class="b" id="bList">Saved</button><button class="b" id="bPng">PNG</button><button class="b" id="bSay">🔊 Explain</button><button class="b" id="bZm">−</button><button class="b" id="bZp">+</button><button class="b" id="bTheme">☾/☀</button></div>
 <div id="intro"><div><i></i>Designing your workflow…</div></div>
-<div id="stage"><div id="canvas"><svg id="wires"></svg></div></div>
-<div id="msg">Waiting…</div>
+<div id="stage"><div id="zoom"><svg id="wires"></svg></div></div>
+<div id="panel"></div><div id="msg">Waiting…</div>
+<div class="modal" id="mdl"><div class="box" id="mbox"></div></div>
+<script src="/static/wfrun.js"></script>
 <script>
-const ICONS={calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',database:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',webhook:'<circle cx="12" cy="6" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="m11 8.5-4 6M13 8.5l4 6M8.5 17h7"/>',check:'<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16 9.5"/>',bolt:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',filter:'<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>',file:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',chat:'<path d="M21 12a8 8 0 0 1-11.5 7L3 21l2-5.5A8 8 0 1 1 21 12z"/>',code:'<path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 5l-4 14"/>',cloud:'<path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 11a3.5 3.5 0 0 1-.5 7z"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',sheet:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',ai:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'};
+const ICONS={calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',database:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',webhook:'<circle cx="12" cy="6" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="m11 8.5-4 6M13 8.5l4 6M8.5 17h7"/>',check:'<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16 9.5"/>',bolt:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',filter:'<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>',file:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',chat:'<path d="M21 12a8 8 0 0 1-11.5 7L3 21l2-5.5A8 8 0 1 1 21 12z"/>',code:'<path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 5l-4 14"/>',cloud:'<path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 11a3.5 3.5 0 0 1-.5 7z"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',sheet:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',ai:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'};
+const KIND_ICON={trigger:'calendar',email:'mail',telegram:'chat',sheet:'sheet',webhook:'webhook',ai:'ai',log:'database',wait:'clock',condition:'filter',notify:'bell',end:'check'};
+const FIELDS={email:[['to','Send to (blank = your own address)'],['subject','Subject'],['body','Body ({{ctx}} = previous result)','t']],telegram:[['text','Message ({{ctx}} = previous result)','t']],sheet:[['values','Row values, comma separated']],webhook:[['url','Webhook URL (https://…) — use for Slack, Discord, Zapier'],],ai:[['prompt','What should the AI do?','t']],condition:[['condition','Condition (unread>0 or always)']],wait:[['seconds','Seconds (max 5)']],log:[['text','Note']],notify:[['text','Text']]};
 const $=s=>document.querySelector(s),NS='http://www.w3.org/2000/svg',W=250,GX=290,GY=150;
-let G=null,timers=[];
-const wait=ms=>new Promise(r=>timers.push(setTimeout(r,ms)));
-function layout(nodes){
-  const by=Object.fromEntries(nodes.map(n=>[n.id,n])),lvl={};
-  const depth=(id,seen=new Set())=>{if(lvl[id]!=null)return lvl[id];return 0};
-  nodes.forEach(n=>lvl[n.id]=0);
-  for(let k=0;k<nodes.length;k++)nodes.forEach(n=>(n.next||[]).forEach(t=>{if(by[t]&&lvl[t]<lvl[n.id]+1&&lvl[n.id]<nodes.length)lvl[t]=lvl[n.id]+1}));
-  const rows={};nodes.forEach(n=>(rows[lvl[n.id]]??=[]).push(n));
-  const pos={};const maxCols=Math.max(...Object.values(rows).map(r=>r.length));
-  // lay out: place children under parent; spread siblings
-  const placed={};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let wf=null,sel=null,Z=1,busy=false;
+const msg=t=>$('#msg').textContent=t;
+try{const a=AXOWF.prefs().accent;if(a)document.documentElement.style.setProperty('--blue',a);if(localStorage.getItem('axo_wf_light')==='1')document.documentElement.classList.add('light')}catch{}
+/* ---------- layout & draw ---------- */
+function autoLayout(){
+  const nodes=wf.nodes,lvl={};nodes.forEach(n=>lvl[n.id]=0);
+  for(let k=0;k<nodes.length;k++)nodes.forEach(n=>(n.next||[]).forEach(t=>{if(t in lvl&&lvl[t]<lvl[n.id]+1&&lvl[n.id]<nodes.length)lvl[t]=lvl[n.id]+1}));
+  const rows={};nodes.forEach(n=>(rows[lvl[n.id]]??=[]).push(n));const px={};
   Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach(l=>{
-    rows[l].forEach((n,i)=>{
-      const parents=nodes.filter(p=>(p.next||[]).includes(n.id)&&placed[p.id]!=null);
-      let x=parents.length?parents.reduce((s,p)=>s+placed[p.id],0)/parents.length:0;
-      const pp=parents[0];if(pp&&pp.next.length>1){x=placed[pp.id]+(pp.next.indexOf(n.id)-0.5)*GX}
-      placed[n.id]=x;
-    });
-    // resolve collisions in the same row
-    const r=rows[l].slice().sort((a,b)=>placed[a.id]-placed[b.id]);
-    for(let i=1;i<r.length;i++)if(placed[r[i].id]-placed[r[i-1].id]<GX)placed[r[i].id]=placed[r[i-1].id]+GX;
+    rows[l].forEach(n=>{const ps=nodes.filter(p=>(p.next||[]).includes(n.id)&&px[p.id]!=null);let x=ps.length?ps.reduce((s,p)=>s+px[p.id],0)/ps.length:0;const p0=ps[0];if(p0&&p0.next.length>1)x=px[p0.id]+(p0.next.indexOf(n.id)-.5)*GX;px[n.id]=x});
+    const r=rows[l].slice().sort((a,b)=>px[a.id]-px[b.id]);for(let i=1;i<r.length;i++)if(px[r[i].id]-px[r[i-1].id]<GX)px[r[i].id]=px[r[i-1].id]+GX;
   });
-  const xs=Object.values(placed),min=Math.min(...xs);
-  nodes.forEach(n=>pos[n.id]={x:placed[n.id]-min+30,y:lvl[n.id]*GY+30,lvl:lvl[n.id]});
-  return pos;
+  const min=Math.min(...Object.values(px));
+  nodes.forEach(n=>{if(!n.pin){n.x=px[n.id]-min+40;n.y=lvl[n.id]*GY+30}});
 }
-function build(data){
-  G=data;$('#ttl').textContent=data.title||'Workflow';document.title='AXO · '+$('#ttl').textContent;
-  const cv=$('#canvas'),svg=$('#wires');[...cv.querySelectorAll('.node,.wl')].forEach(e=>e.remove());svg.innerHTML='';
-  const pos=layout(data.nodes);G.pos=pos;
-  const w=Math.max(...Object.values(pos).map(p=>p.x))+W+40,h=Math.max(...Object.values(pos).map(p=>p.y))+170;
-  cv.style.width=Math.max(w,innerWidth-4)+'px';cv.style.height=h+'px';
-  if(w<innerWidth){const off=(innerWidth-w)/2;Object.values(pos).forEach(p=>p.x+=off)}
-  svg.setAttribute('width',cv.style.width);svg.setAttribute('height',h);
-  data.nodes.forEach(n=>{const p=pos[n.id],d=document.createElement('div');d.className='node '+n.type;d.id='nd-'+n.id;d.style.left=p.x+'px';d.style.top=p.y+'px';
-    d.innerHTML=`<div class="ic"><svg viewBox="0 0 24 24">${ICONS[n.icon]||ICONS.bolt}</svg></div><div><b>${esc(n.title)}</b><small>${esc(n.sub||'')}</small><span class="st" style="display:none"></span></div>`;
-    cv.append(d);n._h=d.offsetHeight;});
-  data.nodes.forEach(n=>(n.next||[]).forEach((t,i)=>{const a=pos[n.id],b=pos[t];if(!b)return;
-    const ah=n.type==='condition'?110:G.nodes.find(x=>x.id===n.id)._h||70;
-    const x1=a.x+W/2,y1=a.y+ah,x2=b.x+W/2,y2=b.y,my=(y1+y2)/2;
-    const path=document.createElementNS(NS,'path');path.setAttribute('d',`M${x1} ${y1}C${x1} ${my},${x2} ${my},${x2} ${y2}`);path.setAttribute('class','wire');path.id=`w-${n.id}-${t}`;svg.append(path);
-    const L=path.getTotalLength();path.style.setProperty('--len',L);path.style.strokeDasharray=L;path.style.strokeDashoffset=L;
-    if(n.labels&&n.labels[i]){const l=document.createElement('div');l.className='wl';l.id=`wl-${n.id}-${t}`;l.textContent=n.labels[i];l.style.left=(x1+x2)/2+'px';l.style.top=my+'px';cv.append(l)}}));
+function nodeHTML(n){return `<div class="ic"><svg viewBox="0 0 24 24">${ICONS[n.icon]||ICONS[KIND_ICON[n.kind]]||ICONS.bolt}</svg></div><div><b>${esc(n.title)}</b><small>${esc(n.sub||'')}</small><span class="st"></span></div>`}
+function render(animate){
+  const z=$('#zoom');z.querySelectorAll('.node,.wl').forEach(e=>e.remove());autoLayout();
+  wf.nodes.forEach(n=>{const d=document.createElement('div');d.className='node '+n.type+(sel===n.id?' sel':'');d.id='nd-'+n.id;d.style.left=n.x+'px';d.style.top=n.y+'px';d.innerHTML=nodeHTML(n);z.append(d);
+    d.addEventListener('pointerdown',e=>startDrag(e,n,d));if(!animate)d.classList.add('on');setStatus(n)});
+  size();wires(!animate);
 }
-const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function reveal(){
-  $('#msg').textContent='Building…';
-  const order=[...G.nodes].sort((a,b)=>G.pos[a.id].lvl-G.pos[b.id].lvl);
-  for(const n of order){
-    (G.nodes.filter(p=>(p.next||[]).includes(n.id))).forEach(p=>{$(`#w-${p.id}-${n.id}`)?.classList.add('on');$(`#wl-${p.id}-${n.id}`)?.classList.add('on')});
-    await wait(260);$('#nd-'+n.id).classList.add('on');await wait(220);
-  }
-  $('#msg').textContent='Ready — press Run to simulate';
-}
-async function run(){
-  timers.forEach(clearTimeout);$('#run').disabled=true;document.querySelectorAll('.node').forEach(n=>{n.classList.remove('running','done');n.querySelector('.st').style.display='none'});
-  document.querySelectorAll('.wire').forEach(w=>w.classList.remove('hot'));
-  const by=Object.fromEntries(G.nodes.map(n=>[n.id,n]));let cur=G.nodes[0];const seen=new Set();
-  while(cur&&!seen.has(cur.id)){
-    seen.add(cur.id);const el=$('#nd-'+cur.id);el.classList.add('running');$('#msg').textContent='Running: '+cur.title;await wait(900);
-    el.classList.remove('running');el.classList.add('done');const st=el.querySelector('.st');st.style.display='block';
-    const t=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    if(cur.type==='condition'){st.textContent='Branch chosen · '+t}else st.innerHTML='✔ Success &nbsp;'+t;
-    const nx=cur.next||[];const pick=nx[0];if(pick)$(`#w-${cur.id}-${pick}`)?.classList.add('hot');cur=by[pick];
-  }
-  $('#msg').textContent='Run complete';$('#run').disabled=false;
-}
+function setStatus(n){const d=$('#nd-'+n.id);if(!d)return;const h=(n.history||[])[0];d.classList.remove('ok','err');const st=d.querySelector('.st');if(!h||!n._show){st.textContent='';return}
+  const t=new Date(h.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});d.classList.add(h.ok?'ok':'err');st.textContent=(h.ok?'✔ Success  ':'⚠ ')+(h.ok?t:String(h.msg).slice(0,60))}
+function nh(n){return $('#nd-'+n.id)?.offsetHeight||(n.type==='condition'?110:72)}
+function size(){const w=Math.max(...wf.nodes.map(n=>n.x))+W+60,h=Math.max(...wf.nodes.map(n=>n.y))+200;const z=$('#zoom');z.style.width=Math.max(w,innerWidth/Z)+'px';z.style.height=h+'px';z.style.transform=`scale(${Z})`;
+  const s=$('#wires');s.setAttribute('width',z.style.width);s.setAttribute('height',h)}
+function wires(show){const svg=$('#wires');svg.innerHTML='';$('#zoom').querySelectorAll('.wl').forEach(e=>e.remove());const by=Object.fromEntries(wf.nodes.map(n=>[n.id,n]));
+  wf.nodes.forEach(n=>(n.next||[]).forEach((t,i)=>{const b=by[t];if(!b)return;const x1=n.x+W/2,y1=n.y+nh(n),x2=b.x+W/2,y2=b.y,my=(y1+y2)/2;
+    const p=document.createElementNS(NS,'path');p.setAttribute('d',`M${x1} ${y1}C${x1} ${my},${x2} ${my},${x2} ${y2}`);p.setAttribute('class','wire'+(show?' on':''));p.id=`w-${n.id}-${t}`;svg.append(p);
+    if(n.labels&&n.labels[i]){const l=document.createElement('div');l.className='wl';l.textContent=n.labels[i];l.style.left=(x1+x2)/2+'px';l.style.top=my+'px';$('#zoom').append(l)}}))}
+/* ---------- drag, select ---------- */
+function startDrag(e,n,d){let moved=false;const sx=e.clientX,sy=e.clientY,ox=n.x,oy=n.y;d.setPointerCapture(e.pointerId);
+  const mv=ev=>{const dx=(ev.clientX-sx)/Z,dy=(ev.clientY-sy)/Z;if(Math.abs(dx)+Math.abs(dy)>4)moved=true;if(moved){n.x=Math.max(0,ox+dx);n.y=Math.max(0,oy+dy);n.pin=true;d.style.left=n.x+'px';d.style.top=n.y+'px';wires(true)}};
+  const up=()=>{d.removeEventListener('pointermove',mv);d.removeEventListener('pointerup',up);if(moved){size();autosave()}else select(n.id)};
+  d.addEventListener('pointermove',mv);d.addEventListener('pointerup',up)}
+function select(id){sel=id;document.querySelectorAll('.node').forEach(d=>d.classList.toggle('sel',d.id==='nd-'+id));panel()}
+function panel(){const p=$('#panel'),n=wf.nodes.find(x=>x.id===sel);if(!n){p.classList.remove('open');return}
+  p.classList.add('open');const f=(FIELDS[n.kind]||[]).map(([k,l,t])=>`<label>${l}</label>${t?`<textarea data-k="${k}">${esc((n.cfg||{})[k])}</textarea>`:`<input data-k="${k}" value="${esc((n.cfg||{})[k])}">`}`).join('');
+  const hist=(n.history||[]).map(h=>`<div class="hist"><span class="${h.ok?'ok':'er'}">${h.ok?'✔':'⚠'}</span> ${new Date(h.t).toLocaleString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',day:'numeric',month:'short'})} — ${esc(String(h.msg).slice(0,80))}</div>`).join('')||'<div class="hist">No runs yet.</div>';
+  const sch=wf.schedule||{};
+  p.innerHTML=`<h3>Step settings <button class="b" style="float:right" id="pX">✕</button></h3><label>Name</label><input id="pT" value="${esc(n.title)}"><label>Detail</label><input id="pS" value="${esc(n.sub)}">
+  <label>What it does</label><select id="pK">${Object.keys(KIND_ICON).map(k=>`<option ${k===n.kind?'selected':''}>${k}</option>`).join('')}</select>${f}
+  <div style="margin-top:14px;display:flex;gap:8px"><button class="b" id="pRun">Test this step</button><button class="b" id="pDel" style="color:var(--red)">Delete</button></div>
+  <label>Run history</label>${hist}
+  <h3 style="margin-top:18px">Daily schedule</h3><label><input type="checkbox" id="sOn" style="width:auto" ${sch.on?'checked':''}> Run every day at</label><input type="time" id="sT" value="${sch.time||'08:00'}"><div class="hist">Runs while AXO is open in a browser tab.</div>`;
+  $('#pX').onclick=()=>{sel=null;select(null)};
+  $('#pT').oninput=e=>{n.title=e.target.value;$('#nd-'+n.id+' b').textContent=n.title;autosave()};$('#pS').oninput=e=>{n.sub=e.target.value;$('#nd-'+n.id+' small').textContent=n.sub;autosave()};
+  $('#pK').onchange=e=>{n.kind=e.target.value;n.icon=KIND_ICON[n.kind];n.cfg={};render(false);panel();autosave()};
+  p.querySelectorAll('[data-k]').forEach(i=>i.oninput=()=>{(n.cfg=n.cfg||{})[i.dataset.k]=i.value;autosave()});
+  $('#pDel').onclick=()=>delNode(n.id);$('#pRun').onclick=async()=>{msg('Testing…');await runOne(n);panel()};
+  $('#sOn').onchange=$('#sT').onchange=()=>{wf.schedule={on:$('#sOn').checked,time:$('#sT').value};AXOWF.save(wf);msg($('#sOn').checked?'Scheduled daily at '+$('#sT').value:'Schedule off')}}
+/* ---------- editing ---------- */
+const uid=()=>'n'+Math.random().toString(36).slice(2,7);
+function addNode(o,afterId){const n={id:uid(),type:'action',icon:KIND_ICON[o.kind||'notify'],title:o.title||'New step',sub:o.sub||'',kind:o.kind||'notify',cfg:o.cfg||{},next:[]};
+  const a=wf.nodes.find(x=>x.id===afterId)||wf.nodes[wf.nodes.length-1];
+  if(o.before&&a){wf.nodes.forEach(p=>p.next=(p.next||[]).map(t=>t===a.id?n.id:t));n.next=[a.id];wf.nodes.push(n)}
+  else if(a){if(a.next.length<=1||a.type!=='condition'){n.next=a.next.slice(0,1);a.next=[n.id]}else{n.next=[a.next[0]];a.next[0]=n.id}if(a.type==='end'){a.type='action'}wf.nodes.push(n)}
+  else wf.nodes.push(n);
+  render(false);select(n.id);autosave();return n}
+function delNode(id){const n=wf.nodes.find(x=>x.id===id);if(!n||wf.nodes.length<2)return;const nx=(n.next||[])[0];wf.nodes.forEach(p=>{p.next=(p.next||[]).map(t=>t===id?nx:t).filter(Boolean)});wf.nodes=wf.nodes.filter(x=>x.id!==id);if(wf.nodes[0].type!=='trigger')wf.nodes[0].type='trigger';sel=null;render(false);panel();autosave()}
+const guessKind=t=>/telegram/i.test(t)?'telegram':/mail/i.test(t)?'email':/sheet|excel/i.test(t)?'sheet':/slack|discord|webhook|zapier/i.test(t)?'webhook':/\bai\b|summar|draft|write/i.test(t)?'ai':/wait|delay/i.test(t)?'wait':/log|database/i.test(t)?'log':'notify';
+const findNode=t=>{t=(t||'').toLowerCase().replace(/\b(the|step|node)\b/g,'').trim();if(!t)return null;return wf.nodes.find(n=>n.title.toLowerCase().includes(t)||(n.kind===guessKind(t)&&guessKind(t)!=='notify'))||null};
+async function applyCmd(text){
+  text=text.trim();let m;
+  if((m=text.match(/^add (?:a |an |the )?(.+?)(?: step| node| action)?(?: (after|before) (?:the )?(.+))?$/i))){const ref=m[3]?findNode(m[3]):null;if(!m[3]||ref){const k=guessKind(m[1]);const title=m[1].replace(/^\w/,c=>c.toUpperCase());addNode({title,kind:k,sub:k==='webhook'?'paste webhook URL in settings':'',before:m[2]==='before'},ref?.id);msg('Added: '+title);return true}}
+  if((m=text.match(/^(?:remove|delete) (?:the )?(.+?)(?: step| node)?$/i))){const n=findNode(m[1]);if(n){delNode(n.id);msg('Removed: '+n.title);return true}}
+  if((m=text.match(/^rename (?:the )?(.+?) to (.+)$/i))){const n=findNode(m[1]);if(n){n.title=m[2];render(false);autosave();msg('Renamed');return true}}
+  try{msg('Asking AI to edit…');const r=await fetch('/api/workflow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:text,edit:true,current:{title:wf.title,nodes:strip(wf.nodes)},ai:AXOWF.ai()})});const d=await r.json();if(!d.ok)throw new Error(d.error);
+    d.nodes.forEach(n=>{const o=wf.nodes.find(x=>x.id===n.id);if(o){n.x=o.x;n.y=o.y;n.pin=o.pin;n.history=o.history}});wf.nodes=d.nodes;wf.title=d.title||wf.title;sel=null;render(false);autosave();msg('Updated');return true}catch(e){msg('Could not apply: '+e.message);return false}}
+const strip=ns=>ns.map(({x,y,pin,history,...r})=>r);
+/* ---------- running (real) ---------- */
+async function runOne(n){const d=$('#nd-'+n.id);d.classList.add('running');const res=await AXOWF.step(n,'');d.classList.remove('running');(n.history=n.history||[]).unshift({t:Date.now(),ok:!!res.ok,msg:res.ok?res.output:res.error});n._show=true;setStatus(n);msg(res.ok?'✔ '+res.output.slice(0,80):'⚠ '+res.error);autosave()}
+async function runAll(){if(busy)return;busy=true;$('#bRun').disabled=true;wf.nodes.forEach(n=>{n._show=false;setStatus(n)});document.querySelectorAll('.wire').forEach(w=>w.classList.remove('hot'));let prev=null;
+  const ok=await AXOWF.run(wf,{start:n=>{$('#nd-'+n.id).classList.add('running');msg('Running: '+n.title)},done:(n,res)=>{const d=$('#nd-'+n.id);d.classList.remove('running');n._show=true;setStatus(n);
+    const nx=(n.next||[])[res.ok?res.branch:0]||(n.next||[])[0];if(nx)$(`#w-${n.id}-${nx}`)?.classList.add('hot')}});
+  msg(ok?'Run complete — every step succeeded':'Stopped: a step failed (tap it to see why)');busy=false;$('#bRun').disabled=false;autosave(true)}
+/* ---------- save / list / templates / export / speak ---------- */
+let saveT;function autosave(now){if(!wf.id&&!now)return;clearTimeout(saveT);saveT=setTimeout(()=>AXOWF.save(wf),now?0:400)}
+function modal(html){$('#mbox').innerHTML=html;$('#mdl').classList.add('on')}$('#mdl').onclick=e=>{if(e.target.id==='mdl')e.target.classList.remove('on')};
+$('#bList').onclick=()=>{const l=AXOWF.list();modal('<h3 style="margin-top:0">Saved workflows</h3>'+(l.map(x=>`<div class="row"><span>${esc(x.title)}${x.schedule?.on?' ⏰':''}</span><button class="b" data-o="${x.id}">Open</button><button class="b" data-d="${x.id}">✕</button></div>`).join('')||'<div class="hist">Nothing saved yet — press Save.</div>'));
+  $('#mbox').onclick=e=>{const o=e.target.dataset.o,d=e.target.dataset.d;if(o){wf=l.find(x=>x.id===o);load()}if(d){AXOWF.remove(d);$('#bList').click()}}};
+function load(){$('#mdl').classList.remove('on');$('#ttl').value=wf.title;sel=null;panel();render(true);reveal()}
+$('#bTpl').onclick=()=>{modal('<h3 style="margin-top:0">Start from a template</h3>'+[['mail','Mail digest'],['report','Daily report'],['orders','Order alerts'],['telegram','Telegram bot replies']].map(([k,t])=>`<div class="row"><span>${t}</span><button class="b go" data-t="${k}">Use</button></div>`).join(''));
+  $('#mbox').onclick=async e=>{const k=e.target.dataset.t;if(!k)return;const r=await fetch('/api/workflow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:k,template:k})});const d=await r.json();wf={title:d.title,nodes:d.nodes};load()}};
+$('#bSave').onclick=()=>{wf.title=$('#ttl').value||wf.title;AXOWF.save(wf);msg('Saved — find it under “Saved”.')};
+$('#ttl').oninput=()=>{if(wf){wf.title=$('#ttl').value;autosave()}};
+$('#bAdd').onclick=()=>addNode({title:'New step'},sel);$('#bRun').onclick=()=>wf&&runAll();
+$('#bZp').onclick=()=>{Z=Math.min(1.6,Z+.15);size();wires(true)};$('#bZm').onclick=()=>{Z=Math.max(.4,Z-.15);size();wires(true)};
+$('#stage').addEventListener('wheel',e=>{if(e.ctrlKey){e.preventDefault();Z=Math.min(1.6,Math.max(.4,Z-e.deltaY*.002));size()}},{passive:false});
+$('#bTheme').onclick=()=>{const l=document.documentElement.classList.toggle('light');localStorage.setItem('axo_wf_light',l?'1':'0')};
+$('#bPng').onclick=()=>{const css=getComputedStyle(document.documentElement),w=Math.max(...wf.nodes.map(n=>n.x))+W+60,h=Math.max(...wf.nodes.map(n=>n.y))+180,c=document.createElement('canvas');c.width=w*2;c.height=h*2;const g=c.getContext('2d');g.scale(2,2);
+  g.fillStyle=css.getPropertyValue('--bg');g.fillRect(0,0,w,h);const by=Object.fromEntries(wf.nodes.map(n=>[n.id,n]));g.strokeStyle='#3a5f96';g.lineWidth=2;
+  wf.nodes.forEach(n=>(n.next||[]).forEach(t=>{const b=by[t];if(!b)return;const x1=n.x+W/2,y1=n.y+nh(n),x2=b.x+W/2,y2=b.y,my=(y1+y2)/2;g.beginPath();g.moveTo(x1,y1);g.bezierCurveTo(x1,my,x2,my,x2,y2);g.stroke()}));
+  wf.nodes.forEach(n=>{const hh=nh(n);g.fillStyle=css.getPropertyValue('--card');g.strokeStyle=css.getPropertyValue('--line');g.beginPath();g.roundRect(n.x,n.y,W,hh,14);g.fill();g.stroke();g.fillStyle=css.getPropertyValue('--text');g.font='600 14px sans-serif';g.fillText(n.title.slice(0,28),n.x+16,n.y+hh/2+(n.sub?-2:5));if(n.sub){g.fillStyle=css.getPropertyValue('--muted');g.font='12px sans-serif';g.fillText(n.sub.slice(0,34),n.x+16,n.y+hh/2+15)}});
+  const a=document.createElement('a');a.download=(wf.title||'workflow')+'.png';a.href=c.toDataURL('image/png');a.click();msg('Image saved')};
+$('#bSay').onclick=async()=>{const by=Object.fromEntries(wf.nodes.map(n=>[n.id,n]));let t=`This workflow is called ${wf.title}. `,cur=wf.nodes[0],i=0,seen=new Set();
+  while(cur&&!seen.has(cur.id)&&i<8){seen.add(cur.id);t+=(i?'Then ':'First, ')+(cur.type==='condition'?'it checks: '+cur.title+'. If yes, ':'it does: ')+cur.title+'. ';cur=by[(cur.next||[])[0]];i++}
+  const s=AXOWF.prefs();const v=['en-GB-RyanNeural','en-GB-SoniaNeural'].includes(s.greetVoice)?s.greetVoice:'en-GB-RyanNeural';msg('Speaking…');
+  try{const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t.slice(0,640),voice:v,rate:-3})});if(!r.ok)throw 0;new Audio(URL.createObjectURL(await r.blob())).play()}catch{msg('Voice unavailable right now')}};
+window.addEventListener('storage',e=>{if(e.key==='axo_wf_cmd'&&e.newValue&&wf){try{const c=JSON.parse(e.newValue);applyCmd(c.text)}catch{}}});
+setInterval(()=>AXOWF.tick(),20000);
+/* ---------- boot ---------- */
+async function reveal(){const order=wf.nodes.slice().sort((a,b)=>a.y-b.y);for(const n of order){$('#nd-'+n.id)?.classList.add('on');await new Promise(r=>setTimeout(r,200));(wf.nodes.filter(p=>(p.next||[]).includes(n.id))).forEach(p=>$(`#w-${p.id}-${n.id}`)?.classList.add('on'))}
+  document.querySelectorAll('.wire').forEach(w=>w.classList.add('on'));msg('Ready — drag steps, tap one to edit, press Run to really run it')}
 async function boot(){
   let req;try{req=JSON.parse(localStorage.getItem('axo_wf_req')||'null')}catch{}
-  const q=new URLSearchParams(location.search);const prompt=(req&&req.prompt)||q.get('q')||'';
-  if(!prompt){$('#intro').firstElementChild.innerHTML='Ask AXO: “build me a workflow chart for mails”.';return}
+  const q=new URLSearchParams(location.search),open=q.get('open'),prompt=(req&&req.prompt)||q.get('q')||'';
   try{
-    const r=await fetch('/api/workflow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,ai:(req&&req.ai)||{}})});
-    const d=await r.json();if(!d.ok)throw new Error(d.error);
-    build(d);$('#intro').style.opacity=0;setTimeout(()=>$('#intro').remove(),500);
-    if(d.fallback)$('#msg').textContent='Sample layout (add an AI key in Settings for custom charts)';
-    await reveal();
+    if(open){wf=AXOWF.list().find(x=>x.id===open)}
+    if(!wf){if(!prompt){wf={title:'Workflow',nodes:[{id:'n1',type:'trigger',icon:'bolt',title:'Start',sub:'',kind:'trigger',cfg:{},next:[]}]};$('#intro').remove();render(false);msg('Pick a template, or ask AXO to build one');$('#bTpl').click();return}
+      const r=await fetch('/api/workflow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,ai:AXOWF.ai()})});const d=await r.json();if(!d.ok)throw new Error(d.error);wf=d;localStorage.removeItem('axo_wf_req')}
+    $('#ttl').value=wf.title;render(true);$('#intro').remove();await reveal();if(wf.fallback)msg('Template layout — add an AI key in Settings for custom charts, or edit steps yourself')
   }catch(e){$('#intro').firstElementChild.textContent='Could not build: '+e.message}
 }
-$('#run').onclick=()=>G&&run();
-$('#again').onclick=()=>{const p=prompt('Describe the workflow:');if(p){localStorage.setItem('axo_wf_req',JSON.stringify({...(JSON.parse(localStorage.getItem('axo_wf_req')||'{}')),prompt:p}));location.reload()}};
-$('#exp').textContent='Copy JSON';$('#exp').onclick=()=>{navigator.clipboard?.writeText(JSON.stringify({title:G.title,nodes:G.nodes.map(({_h,...n})=>n)},null,2));$('#msg').textContent='Copied workflow JSON'};
 boot();
 </script></body></html>
