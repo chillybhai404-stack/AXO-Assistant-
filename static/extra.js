@@ -537,20 +537,30 @@ $('#schForm')?.addEventListener('submit', ev => { ev.preventDefault(); addSchedu
 let schBusy = false;
 async function runSchedule(s) {
   try {
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-      message: s.prompt, history: [], prefs: { platform: settings.platform, contacts: contactsMap() },
-      ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() }) });
-    const d = await res.json(); if (!d.ok) return;
+    let d;
+    const mode = settings.ai?.mode || 'auto';
+    const useLocal = mode === 'local' || (mode === 'auto' && window.AXOModels?.isReady());
+    if (useLocal) {
+      if (!window.AXOModels?.isReady()) return;
+      d = await window.AXOModels.chat(s.prompt, []);
+    } else {
+      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        message: s.prompt, history: [], prefs: { platform: settings.platform, contacts: contactsMap() },
+        ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() }) });
+      d = await res.json();
+    }
+    if (!d?.ok) return;
     try {
       const chat = currentChat(); addMessage('user', `Scheduled: ${s.prompt}`); chat.messages.push({ role: 'user', content: `Scheduled: ${s.prompt}`, createdAt: Date.now() });
       const h = addMessage('assistant', d.reply || 'Done.'); const extras = {};
       ['action', 'actions', 'confirms', 'news', 'images', 'map', 'cards', 'charts', 'invoice', 'source', 'intent'].forEach(k => { if (d[k] !== undefined) extras[k] = d[k]; });
       renderIntelligence(extras, h.richHost); chat.messages.push({ role: 'assistant', content: d.reply || 'Done.', extras, createdAt: Date.now() }); chat.updatedAt = Date.now(); persistConversations();
     } catch { /* ignore */ }
+    (d.reminders || []).forEach(scheduleReminder);
     toast(`Scheduled: ${(d.reply || '').slice(0, 80)}`);
     try { if ('Notification' in window && Notification.permission === 'granted') new Notification('AXO', { body: (d.reply || '').slice(0, 140), icon: LOGO_URL }); } catch { /* ignore */ }
     if (settings.voiceReplies || settings.greetSpeak) neuralSay(String(d.reply || '').replace(/https?:\/\/\S+/g, 'link').slice(0, 500));
-  } catch { /* ignore */ }
+  } catch (error) { console.warn('AXO scheduled task failed:', error); }
 }
 function tickSchedules() {
   if (schBusy || !(settings.schedules || []).length) return;

@@ -16,7 +16,7 @@ let settings = { theme: 'dark', enterToSend: true, voiceReplies: false, voiceLan
   accent: '#3989f6', fontSize: '100', compactMode: false, reduceMotion: false,
   voiceName: 'en-GB-RyanNeural', voiceRate: -5, autoOpen: true, openTarget: 'new_tab',
   notifications: true, platform: 'youtube', videoPlatform: 'youtube', searchEngine: 'google',
-  ai: { provider: 'auto', url: '', key: '', model: '', agent: true },
+  ai: { provider: 'auto', url: '', key: '', model: '', agent: true, mode: 'auto' },
   gmail: { email: '', password: '' }, github: { token: '' }, firebase: { service_account: '' }, telegram: { token: '', chat: '' }, contactsText: '' };
 const ACCENTS = ['#3989f6', '#a3e635', '#f472b6', '#f59e0b', '#a78bfa', '#22d3ee', '#ef4444'];
 const LOGO_URL = '/static/logo.png';
@@ -73,7 +73,7 @@ function readSavedData() {
     const stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
     settings = { ...settings, ...(stored && typeof stored === 'object' ? stored : {}) };
   } catch { /* keep defaults */ }
-  settings.ai = { provider: 'auto', url: '', key: '', model: '', agent: true, ...(settings.ai || {}) };
+  settings.ai = { provider: 'auto', url: '', key: '', model: '', agent: true, mode: 'auto', ...(settings.ai || {}) };
   applySettings();
   renderChatHistory();
   if (conversations.length) loadConversation(conversations[0].id);
@@ -200,12 +200,12 @@ function applySettings() {
   const an = $('#accountName'); if (an) an.textContent = settings.name ? settings.name : 'AXO Assistant';
   const ai = settings.ai || {}, gm = settings.gmail || {}, gh = settings.github || {};
   const v = (id, val) => { const el = $(id); if (el && document.activeElement !== el) el.value = val ?? ''; };
-  v('#aiProvider', ai.provider); v('#aiUrl', ai.url); v('#aiKey', ai.key); v('#aiModel', ai.model);
+  v('#aiProvider', ai.provider); v('#aiUrl', ai.url); v('#aiKey', ai.key); v('#aiModel', ai.model); v('#aiMode', ai.mode || 'auto');
   const ag = $('#aiAgent'); if (ag) ag.checked = ai.agent !== false;
   const ur = $('#aiUrlRow'); if (ur) ur.style.display = ai.provider === 'custom' ? '' : 'none';
   document.documentElement.classList.toggle('compact-mode', !!settings.compactMode);
   document.documentElement.dataset.motion = settings.reduceMotion ? 'reduced' : 'full';
-  const status = $('#apiStatus'); if (status) status.textContent = ai.key ? 'AI KEY SAVED' : 'LOCAL CORE';
+  const status = $('#apiStatus'); if (status) status.textContent = window.AXOModels?.isReady() ? `LOCAL · ${window.AXOModels.getActiveModel()?.parameters || 'MODEL'}` : (ai.key ? 'AI KEY SAVED' : 'LOCAL CORE');
   v('#fbJson', (settings.firebase || {}).service_account); v('#tgToken', (settings.telegram || {}).token); v('#tgChat', (settings.telegram || {}).chat); v('#contactsText', settings.contactsText);
   v('#gmEmail', gm.email); v('#gmPass', gm.password); v('#ghToken', gh.token);
   renderWelcome();
@@ -347,13 +347,25 @@ async function sendMessage(rawText) {
   assistantHandle.bubble.classList.add('thinking');
   setCoreState('thinking');
   try {
-    const response = await fetch('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform, video_platform: settings.videoPlatform, search_engine: settings.searchEngine || 'google', contacts: contactsMap() },
-        ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || 'The request failed.');
+    const aiMode = settings.ai?.mode || 'auto';
+    const useLocal = aiMode === 'local' || (aiMode === 'auto' && window.AXOModels?.isReady());
+    let data;
+    if (useLocal) {
+      if (!window.AXOModels?.isReady()) throw new Error('Local model mode is selected, but no model is loaded. Open Model library and tap “Use model”, or switch AI runtime to API/Auto.');
+      data = await window.AXOModels.chat(message, contextHistory, partial => {
+        assistantHandle.bubble.textContent = partial || 'Thinking…';
+        assistantHandle.bubble.classList.remove('thinking');
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+      });
+    } else {
+      const response = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform, video_platform: settings.videoPlatform, search_engine: settings.searchEngine || 'google', contacts: contactsMap() },
+          ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() })
+      });
+      data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'The request failed.');
+    }
     const reply = data.reply || 'Done.';
     assistantHandle.bubble.textContent = reply;
     assistantHandle.bubble.classList.remove('thinking');
@@ -445,6 +457,7 @@ function integrationsPayload() {
   return { gmail: settings.gmail || {}, github: settings.github || {}, firebase: settings.firebase || {}, telegram: settings.telegram || {}, contacts: contactsMap(),
     calendar: settings.calendar || {}, sheets: settings.sheets || {}, wabiz: settings.wabiz || {} };
 }
+window.AXOGetPrefs = () => ({ platform: settings.platform || 'youtube', video_platform: settings.videoPlatform || 'youtube', search_engine: settings.searchEngine || 'google' });
 const SAFE_SCHEME = /^(intent|tel|sms|mailto|geo|https?|whatsapp|tg|vnd\.youtube|fb|instagram|twitter|spotify|googlegmail|comgooglemaps|nflx|snapchat|linkedin|reddit|snssdk1233|clock-alarm|calshow|photos-redirect|music|github|googlechrome|App-Prefs):/i;
 function appTarget(a) {
   const ua = navigator.userAgent;
@@ -785,6 +798,7 @@ function showPanel(name) {
   $$('.side-tool').forEach(button => button.classList.toggle('active', button.dataset.panel === name));
   $('#sidebar')?.classList.remove('open');
   $('#sidebarScrim')?.classList.remove('visible');
+  if (name === 'models') window.AXOModels?.reload?.();
   if (name === 'news') loadNews('general');
   if (name === 'apis') loadApis();
   if (name === 'apps') loadApps();
@@ -793,6 +807,8 @@ function showPanel(name) {
   if (name === 'notes') loadNotes();
 }
 $$('.side-tool').forEach(button => button.addEventListener('click', () => showPanel(button.dataset.panel)));
+$('#openModelLibrary')?.addEventListener('click', () => { closeSettings(); showPanel('models'); });
+$('#modelApiSettings')?.addEventListener('click', () => { openSettings(); showSettingsSection('ai'); });
 $$('.suggestions button').forEach(button => button.addEventListener('click', () => sendMessage(button.dataset.prompt)));
 $('#newChat').addEventListener('click', () => newChat());
 $('#clearChat').addEventListener('click', () => newChat());
@@ -829,7 +845,7 @@ async function loadStatus() {
     const response = await fetch('/api/status');
     const data = await response.json();
     $('#connectionText').textContent = data.ok ? 'Ready to chat' : 'Backend unavailable';
-    $('#apiStatus').textContent = (settings.ai || {}).key ? 'AI KEY SAVED' : (data.ai_configured ? 'SERVER AI' : 'LOCAL CORE');
+    $('#apiStatus').textContent = window.AXOModels?.isReady() ? `LOCAL · ${window.AXOModels.getActiveModel()?.parameters || 'MODEL'}` : ((settings.ai || {}).key ? 'AI KEY SAVED' : (data.ai_configured ? 'SERVER AI' : 'LOCAL CORE'));
   } catch { $('#connectionText').textContent = 'Backend unavailable'; }
 }
 
@@ -1060,7 +1076,7 @@ const nested = (id, group, key, check) => {
     saveSettings(); applySettings();
   });
 };
-nested('#aiProvider', 'ai', 'provider'); nested('#aiUrl', 'ai', 'url'); nested('#aiKey', 'ai', 'key');
+nested('#aiMode', 'ai', 'mode'); nested('#aiProvider', 'ai', 'provider'); nested('#aiUrl', 'ai', 'url'); nested('#aiKey', 'ai', 'key');
 nested('#aiModel', 'ai', 'model'); nested('#aiAgent', 'ai', 'agent', true);
 nested('#fbJson', 'firebase', 'service_account'); nested('#tgToken', 'telegram', 'token'); nested('#tgChat', 'telegram', 'chat');
 $('#contactsText')?.addEventListener('input', e => { settings.contactsText = e.target.value; saveSettings(); });
