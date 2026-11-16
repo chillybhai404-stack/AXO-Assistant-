@@ -42,6 +42,10 @@ def local_inference_headers(response):
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     response.headers.setdefault("Cross-Origin-Embedder-Policy", "credentialless")
     response.headers.setdefault("Permissions-Policy", "webgpu=(self)")
+    # SharedArrayBuffer enables Wllama's multi-threaded WASM build. Keep app
+    # assets fresh after a release so old service-worker copies cannot linger.
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 SESSION = requests.Session()
 SESSION.headers.update({

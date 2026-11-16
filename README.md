@@ -128,3 +128,28 @@ The starter list is metadata-only and points to the publishers' public Hugging F
 ### Testing note
 
 Static checks cover Python compilation and JavaScript syntax. This source bundle has not been run on physical Android hardware here, and the live Hugging Face download, Wllama CDN/WASM initialization, real GGUF inference, OPFS quota behavior, WebGPU availability, and tool-calling quality remain runtime tests to perform after deployment. Local tool calling also depends on the selected model's support for structured tool-call output.
+
+
+## V19 local-model fixes
+
+- Local inference now enables Wllama Jinja chat templates and uses a mobile-oriented 1536-token context.
+- Ordinary chat no longer attaches tool schemas to every request; tool schemas are attached only to clear web/search/weather/reminder/scheduling requests. Empty streams retry once as a non-streaming completion, and real errors are surfaced in chat.
+- The previously selected local model auto-loads on startup once first-run setup has completed.
+- First-run onboarding now requires downloading and loading one starter GGUF model before setup finishes.
+- Downloads and model loading use a centered progress dialog with byte count, percentage and cancel control.
+- The chat composer now has an Auto/API/local-model switcher directly below the message input. API mode remains available.
+- Static cache version bumped to v19 to avoid stale JS/CSS after deployment.
+
+The browser runtime still cannot be guaranteed to match a native Android inference app such as PocketPal. Multi-threaded WASM depends on browser support and cross-origin isolation; large models remain hardware-dependent. Actual GGUF execution and Android timing require device testing after deployment.
+
+
+## V20 local inference and onboarding fixes
+
+- Normal local chat no longer attaches function schemas to every prompt; tools are attached only to explicit action/search requests.
+- Local chat uses the GGUF Jinja template, streams text, and retries with a non-streaming completion if streaming errors or returns no text.
+- Model loading attempts WebGPU acceleration when supported, then retries CPU-only with a smaller context if the mobile GPU cannot allocate the model.
+- The first-run onboarding cannot finish until a starter model has downloaded and loaded. The download dialog displays transferred bytes and percentage, and loading has a separate indeterminate state.
+- The composer has a Claude-style model selector for Auto, API and downloaded local models. Auto mode can hand live/connected-account actions to the configured API agent.
+- Static asset cache is bumped to V20 to prevent old local inference scripts staying in the service worker.
+
+Validation completed in the build environment: JavaScript syntax checks, Python compilation, HTML duplicate-ID checks and ZIP integrity. Actual GGUF loading, Android WebGPU availability, token speed and API tool execution still require on-device testing.
