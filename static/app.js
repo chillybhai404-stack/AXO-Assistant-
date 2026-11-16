@@ -169,6 +169,13 @@ function saveSettings() {
   try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings)); }
   catch { toast('Could not save preferences in this browser.'); }
 }
+window.AXOSetRuntimeMode = function (mode) {
+  const next = ['auto', 'api', 'local'].includes(mode) ? mode : 'auto';
+  settings.ai = { ...(settings.ai || {}), mode: next };
+  saveSettings();
+  applySettings();
+};
+window.AXOGetRuntimeMode = () => settings.ai?.mode || 'auto';
 function applySettings() {
   let theme = settings.theme || 'dark';
   if (theme === 'system') theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -357,6 +364,19 @@ async function sendMessage(rawText) {
         assistantHandle.bubble.classList.remove('thinking');
         chatWindow.scrollTop = chatWindow.scrollHeight;
       });
+      // In Auto mode, route live-web or connected-account actions to the
+      // existing authenticated agent when the user has configured an API key.
+      if (data.needsCloudFallback && aiMode === 'auto' && (settings.ai || {}).key) {
+        assistantHandle.bubble.textContent = 'Using the connected API for this action…';
+        assistantHandle.bubble.classList.add('thinking');
+        const response = await fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, history: contextHistory, prefs: { platform: settings.platform, video_platform: settings.videoPlatform, search_engine: settings.searchEngine || 'google', contacts: contactsMap() },
+            ai: { provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key, agent: (settings.ai || {}).agent !== false, address: addressName() }, integrations: integrationsPayload() })
+        });
+        data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'The connected API request failed.');
+      }
     } else {
       const response = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -809,6 +829,7 @@ function showPanel(name) {
 $$('.side-tool').forEach(button => button.addEventListener('click', () => showPanel(button.dataset.panel)));
 $('#openModelLibrary')?.addEventListener('click', () => { closeSettings(); showPanel('models'); });
 $('#modelApiSettings')?.addEventListener('click', () => { openSettings(); showSettingsSection('ai'); });
+$('#composerManageModels')?.addEventListener('click', () => showPanel('models'));
 $$('.suggestions button').forEach(button => button.addEventListener('click', () => sendMessage(button.dataset.prompt)));
 $('#newChat').addEventListener('click', () => newChat());
 $('#clearChat').addEventListener('click', () => newChat());
@@ -1284,5 +1305,5 @@ function startGreeting() {
 
 readSavedData();
 loadStatus();
-window.__axuBoot = () => { if (!settings.name && !settings.onboarded) openOnboarding(); else startGreeting(); };
+window.__axuBoot = () => { const modelReady = localStorage.getItem('axo_onboarding_model_ready') === '1'; if (!settings.name || !settings.onboarded || !modelReady) openOnboarding(); else startGreeting(); };
 if (!document.querySelector('script[src*="extra.js"]')) window.__axuBoot();

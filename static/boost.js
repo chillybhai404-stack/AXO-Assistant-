@@ -1,6 +1,6 @@
-/* AXO v18: greeting (Ryan/Sonia only), tutorials, workflows, sheet/doc maker, quick actions, palette, checklist. */
+/* AXO v20: greeting (Ryan/Sonia only), tutorials, workflows, sheet/doc maker, quick actions, palette, checklist. */
 (function () {
-  const VERSION = 'v18';
+  const VERSION = 'v20';
   const GV = { 'en-GB-RyanNeural': 'Ryan', 'en-GB-SoniaNeural': 'Sonia' };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const aiPayload = () => ({ provider: (settings.ai || {}).provider, url: (settings.ai || {}).url, key: (settings.ai || {}).key });

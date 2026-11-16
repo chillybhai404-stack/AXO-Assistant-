@@ -426,21 +426,76 @@ function buildOnboarding() {
 }
 function obShow(n) {
   obStep = n; $$('.ob-step').forEach(s => s.classList.toggle('on', Number(s.dataset.step) === n));
-  $$('#obDots i').forEach((d, i) => d.classList.toggle('on', i + 1 === n)); $('#onboardGo').textContent = n === 4 ? 'Start' : 'Next';
+  $$('#obDots i').forEach((d, i) => d.classList.toggle('on', i + 1 === n)); $('#onboardGo').textContent = n === 5 ? 'Download & start' : 'Next';
+  const skip = $('#onboardSkip'); if (skip) skip.hidden = n === 5;
+  if (n === 5) loadOnboardingModels();
   if (n === 4) {
     const box = $('#obConnect'); box.innerHTML = '';
     [...obInterests].filter(i => CONNECTS[i]).forEach(i => {
       const c = CONNECTS[i], row = document.createElement('div'); row.className = 'ob-card'; row.innerHTML = `<span>${c.t}<small>${c.d}</small></span>${c.sec ? '<button type="button">Connect now</button>' : ''}`;
-      row.querySelector('button')?.addEventListener('click', () => { obSection = c.sec; onboardFinish(); }); box.append(row);
+      row.querySelector('button')?.addEventListener('click', () => { obSection = c.sec; obShow(5); }); box.append(row);
     });
     if (!box.children.length) box.innerHTML = '<div class="ob-card"><span>You can connect Email, GitHub, Firebase and more later in Settings → Integrations.</span></div>';
   }
 }
+async function loadOnboardingModels() {
+  const select = $('#obModelSelect');
+  const info = $('#obModelInfo');
+  if (!select || select.dataset.loaded === '1') return;
+  select.dataset.loaded = '1';
+  try {
+    const response = await fetch('/api/model-library/featured');
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Could not load starter models.');
+    const models = data.models || [];
+    select.innerHTML = '';
+    models.forEach(model => {
+      const option = document.createElement('option'); option.value = model.id;
+      option.textContent = `${model.name} · ${model.quantization || 'GGUF'}`;
+      select.append(option);
+    });
+    const defaultModel = models.find(m => m.id === 'qwen25-05b-instruct') || models[0];
+    if (defaultModel) select.value = defaultModel.id;
+    const update = () => {
+      const chosen = models.find(m => m.id === select.value);
+      if (info && chosen) info.textContent = `${chosen.parameters} · ${chosen.description || 'Local model'} ${chosen.device_note || ''}`;
+    };
+    select.addEventListener('change', update); update();
+  } catch (error) {
+    if (info) info.textContent = `Model list unavailable: ${error.message}. Check your internet connection and retry.`;
+    select.dataset.loaded = '0';
+  }
+}
+
+async function onboardDownloadModel() {
+  const select = $('#obModelSelect');
+  const status = $('#obModelReady');
+  const button = $('#onboardGo');
+  if (!window.AXOModels?.downloadFeaturedModel) {
+    if (status) status.textContent = 'Model downloader is unavailable. Refresh the page and retry.';
+    return;
+  }
+  const modelId = select?.value;
+  if (!modelId) { if (status) status.textContent = 'Choose a starter model first.'; return; }
+  button.disabled = true; button.textContent = 'Preparing…';
+  if (status) status.textContent = 'Downloading and loading your first model…';
+  try {
+    await window.AXOModels.downloadFeaturedModel(modelId, true);
+    localStorage.setItem('axo_onboarding_model_ready', '1');
+    if (status) status.textContent = 'Model ready. Finishing setup…';
+    button.textContent = 'Starting…';
+    onboardFinish();
+  } catch (error) {
+    if (status) status.textContent = `Could not prepare this model: ${error.message}. Choose a smaller model or retry.`;
+    button.disabled = false; button.textContent = 'Retry download';
+  }
+}
+
 function onboardNext() {
   buildOnboarding();
   if (obStep === 1) { if (!$('#onboardName').value.trim()) { $('#onboardName').focus(); return; } obShow(2); return; }
-  if (obStep < 4) { obShow(obStep + 1); return; }
-  onboardFinish();
+  if (obStep < 5) { obShow(obStep + 1); return; }
+  onboardDownloadModel();
 }
 function onboardFinish() {
   const key = ($('#obKey')?.value || '').trim();
@@ -449,7 +504,7 @@ function onboardFinish() {
   finishOnboarding();
   if (obSection) { const s = obSection; obSection = null; setTimeout(() => { openSettings(); showSettingsSection(s); }, 400); }
 }
-$('#onboardSkip')?.addEventListener('click', () => { if (!$('#onboardName').value.trim()) { $('#onboardName').focus(); return; } onboardFinish(); });
+$('#onboardSkip')?.addEventListener('click', () => { if (!$('#onboardName').value.trim()) { $('#onboardName').focus(); return; } obShow(5); });
 const _oo = openOnboarding; openOnboarding = function () { _oo(); buildOnboarding(); obShow(1); };
 
 /* ================= Neural greeting (uses the voice you picked) ================= */
