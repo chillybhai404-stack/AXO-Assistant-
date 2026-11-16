@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20" />
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -101,6 +101,12 @@
                   <button type="submit" class="send-button" id="sendButton" aria-label="Send message"><svg class="icon"><use href="#i-send"/></svg></button>
                 </div>
               </form>
+              <div class="composer-modelbar">
+                <span class="composer-model-label">MODEL</span>
+                <select id="chatModelSelect" aria-label="Choose chat model"><option value="auto">Auto</option><option value="api">API · Cloud</option></select>
+                <span id="composerModelStatus">Choose local model or API</span>
+                <button type="button" id="composerManageModels">Manage</button>
+              </div>
               <div class="composer-caption"><span id="modeHint">Chats are saved on this device</span><span>AXO can make mistakes. Check important information.</span></div>
             </div>
           </div>
@@ -172,12 +178,6 @@
           <div class="model-grid" id="modelSearchResults"><div class="empty-state">Search for a model family, such as Qwen, Gemma or Llama.</div></div>
           <div class="model-library-heading"><div><h2>My downloaded models</h2><span>Saved on this browser/device</span></div><span id="myModelCount">0 models</span></div>
           <div class="model-grid" id="myDownloadedModels"><div class="empty-state">Downloaded models will appear here.</div></div>
-          <div class="model-progress-wrap" id="modelProgressWrap" hidden>
-            <div class="model-progress-top"><strong id="modelProgressLabel">Preparing download…</strong><span id="modelProgressPct">0%</span></div>
-            <div class="model-progress-track"><i id="modelProgressBar"></i></div>
-            <small id="modelProgressDetail">The model is saved in this browser's private origin storage.</small>
-            <button class="pill-button" id="cancelModelDownload" type="button">Cancel download</button>
-          </div>
           <div class="model-library-footnote">Local inference uses the browser's WebAssembly/WebGPU runtime. Large models need substantial memory and storage; 14B entries may be browseable but not practical on an 8GB phone. A single GGUF file above the browser runtime's 2GB ArrayBuffer limit is not offered for direct download; complete split-model groups are supported when every shard is below 1.85GB. Even then, very large models may not fit phone memory. Use API mode for larger models on mobile. Internet tools send only the search query to AXO's backend; the local chat itself stays on this device.</div>
         </section>
         <section class="panel secondary-panel" id="panel-news">
@@ -415,7 +415,7 @@
           <p class="settings-footnote">AXO does not claim end-to-end encryption, anonymous account access, or automatic deletion from third-party providers. This summary describes the current app build; hosting and provider retention are governed by those services.</p>
         </section>
         <section class="sp-sec" id="sec-about"><h3>About AXO</h3>
-          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant · v18</strong><small>Personal assistant by AXU</small></div></div>
+          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant · v20</strong><small>Personal assistant by AXU</small></div></div>
           <p class="settings-footnote">AXO combines a Python/Flask backend, a browser interface, public-data tools, an optional on-device GGUF runtime and cloud AI connections. Local models run in this browser when supported. Cloud API mode remains available for connected-account agent actions and larger models.</p>
           <h4 class="int-h">AXO Bots</h4>
           <div class="privacy-card"><div class="privacy-symbol" data-icon="bot"></div><div><strong>Personal bots and bot teams</strong><p>Create focused assistants with their own names, instructions, knowledge notes, links and visual identity. Bots can use permitted AXO tools, and teams can pass one bot's result to the next as a workflow. Bot conversations and definitions are saved in this browser unless you export or sync them.</p><button type="button" class="pill-button" data-panel-jump="bots">Open bot studio</button></div></div>
@@ -435,12 +435,28 @@
         <div class="onboard-title" id="onboardTitle"><button type="button" data-v="name" class="on">My name</button><button type="button" data-v="Sir">Sir</button><button type="button" data-v="Madam">Madam</button><button type="button" data-v="Boss">Boss</button></div></div>
       <div class="ob-step" data-step="2"><h1>Pick my voice</h1><p>Tap “Hear” to preview. You can change it any time in Settings.</p><div class="ob-voices" id="obVoices"></div></div>
       <div class="ob-step" data-step="3"><h1>What will you use AXO for?</h1><p>Pick any. I'll set things up for you.</p><div class="ob-chips" id="obInterests"></div></div>
-      <div class="ob-step" data-step="4"><h1>Connect your world</h1><p>Add an AI key to unlock the agent, then connect what you need.</p>
-        <input id="obKey" type="password" autocomplete="off" placeholder="Paste AI key (Gemini, Groq, OpenAI, OpenRouter)">
+      <div class="ob-step" data-step="4"><h1>Connect your world</h1><p>Add an optional API key for cloud models and connected-account tasks.</p>
+        <input id="obKey" type="password" autocomplete="off" placeholder="Optional API key (Gemini, Groq, OpenAI, OpenRouter)">
         <div class="ob-connect" id="obConnect"></div></div>
-      <div class="ob-dots" id="obDots"><i class="on"></i><i></i><i></i><i></i></div>
+      <div class="ob-step" data-step="5"><h1>Download your first model</h1><p>AXO needs one local model before you start. Choose a starter model; you can switch or add others later.</p>
+        <label class="ob-model-choice"><span>Starter model</span><select id="obModelSelect"><option value="qwen25-05b-instruct">Qwen2.5 0.5B Instruct · recommended for phones</option><option value="qwen25-15b-instruct">Qwen2.5 1.5B Instruct</option><option value="qwen25-coder-3b">Qwen2.5 Coder 3B Instruct · coding</option></select></label>
+        <div id="obModelInfo" class="ob-model-info">Smallest download and best first test for mobile.</div>
+        <div id="obModelReady" class="ob-model-ready" role="status">A model download is required to finish setup.</div>
+      </div>
+      <div class="ob-dots" id="obDots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
       <button class="onboard-go" id="onboardGo" type="button">Next</button>
       <button class="ob-skip" id="onboardSkip" type="button">Skip setup</button>
+    </div>
+  </div>
+  <div class="model-download-modal" id="modelDownloadModal" hidden role="dialog" aria-modal="true" aria-labelledby="modelProgressLabel">
+    <div class="model-download-dialog">
+      <div class="model-download-mark">AXO</div>
+      <div class="model-progress-wrap" id="modelProgressWrap">
+        <div class="model-progress-top"><strong id="modelProgressLabel">Preparing model…</strong><span id="modelProgressPct">0%</span></div>
+        <div class="model-progress-track"><i id="modelProgressBar"></i></div>
+        <small id="modelProgressDetail">The model is being saved on this device.</small>
+        <button class="pill-button" id="cancelModelDownload" type="button">Cancel download</button>
+      </div>
     </div>
   </div>
   <div class="voice-mode" id="voiceMode" aria-hidden="true">
@@ -453,9 +469,9 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="{{ url_for('static', filename='icons.js') }}"></script>
-  <script src="{{ url_for('static', filename='model-library.js') }}"></script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-  <script src="{{ url_for('static', filename='extra.js') }}"></script>
+  <script src="{{ url_for('static', filename='model-library.js') }}?v=20"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20"></script>
+  <script src="{{ url_for('static', filename='extra.js') }}?v=20"></script>
   <script src="{{ url_for('static', filename='extra2.js') }}"></script>
   <script src="{{ url_for('static', filename='ui.js') }}"></script>
   <script src="{{ url_for('static', filename='wfrun.js') }}"></script>
