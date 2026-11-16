@@ -17,7 +17,7 @@ import threading
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 from zoneinfo import ZoneInfo
 
 import requests
@@ -29,11 +29,20 @@ import musicLibrary
 import videosLibrary
 import config
 from api_catalog import API_CATALOG
+from model_catalog import FEATURED_MODELS, MAX_DISCOVERY_BILLIONS
 
 BASE_DIR = Path(__file__).resolve().parent
 NOTES_FILE = BASE_DIR / "notes.json"
 LIBRARY_FILE = BASE_DIR / "library.json"
 app = Flask(__name__)
+
+
+@app.after_request
+def local_inference_headers(response):
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Embedder-Policy", "credentialless")
+    response.headers.setdefault("Permissions-Policy", "webgpu=(self)")
+    return response
 SESSION = requests.Session()
 SESSION.headers.update({
     "User-Agent": "AXOWebPydroid/3.0 (personal educational assistant)",
@@ -1320,6 +1329,146 @@ def status():
                          "Spaceflight News", "NASA EONET", "GBIF", "Datamuse", "World Bank", "PokéAPI",
                          "Open Trivia DB", "Sunrise-Sunset"],
     })
+
+
+@app.get("/api/model-library/featured")
+def model_library_featured():
+    """Return the three starter GGUF models shown when the library opens."""
+    return jsonify({"ok": True, "models": FEATURED_MODELS, "max_parameters_b": MAX_DISCOVERY_BILLIONS})
+
+
+def _model_parameter_billions(model_id):
+    match = re.search(r"(?<![a-z0-9])(\d+(?:\.\d+)?)\s*b(?![a-z])", str(model_id), re.I)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+@app.get("/api/model-library/search")
+def model_library_search():
+    """Search public Hugging Face GGUF repositories, capped at 14B parameters."""
+    query = re.sub(r"[^a-zA-Z0-9 ._+-]", "", request.args.get("q", "")).strip()[:90]
+    if not query:
+        return jsonify({"ok": False, "error": "Enter a model name or family to search."}), 400
+    try:
+        response = SESSION.get(
+            "https://huggingface.co/api/models",
+            params={"search": query, "filter": "gguf", "sort": "downloads", "direction": "-1", "limit": 30, "full": "true"},
+            timeout=18,
+        )
+        response.raise_for_status()
+        raw = response.json()
+        models = []
+        for item in raw if isinstance(raw, list) else []:
+            repo = str(item.get("id") or item.get("modelId") or "")
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+                continue
+            params_b = _model_parameter_billions(repo)
+            if params_b is None or params_b > MAX_DISCOVERY_BILLIONS:
+                continue
+            card = item.get("cardData") if isinstance(item.get("cardData"), dict) else {}
+            tags = item.get("tags") if isinstance(item.get("tags"), list) else []
+            models.append({
+                "id": "hf:" + repo,
+                "name": repo.split("/", 1)[-1].replace("-GGUF", "").replace("-", " "),
+                "parameters": f"{params_b:g}B",
+                "parameter_billions": params_b,
+                "category": "Community GGUF",
+                "description": (str(card.get("description") or "Community-published GGUF model.")[:220]),
+                "repo": repo,
+                "license": str(card.get("license") or "Check model card"),
+                "publisher": repo.split("/", 1)[0],
+                "downloads": int(item.get("downloads") or 0),
+                "likes": int(item.get("likes") or 0),
+                "tags": [str(t) for t in tags[:12]],
+                "source": "Hugging Face",
+                "device_note": "Check the selected quantization, file size, model licence and device memory before downloading.",
+            })
+        return jsonify({"ok": True, "models": models[:24], "max_parameters_b": MAX_DISCOVERY_BILLIONS})
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": "Hugging Face search is temporarily unavailable: " + str(exc)[:160]}), 502
+    except (ValueError, TypeError) as exc:
+        return jsonify({"ok": False, "error": "Could not read the model catalogue: " + str(exc)[:120]}), 502
+
+
+@app.get("/api/model-library/files")
+def model_library_files():
+    """List GGUF files and sizes for one validated public Hugging Face repo."""
+    repo = request.args.get("repo", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        return jsonify({"ok": False, "error": "Repository must use the owner/name format."}), 400
+    try:
+        response = SESSION.get(
+            f"https://huggingface.co/api/models/{repo}",
+            params={"blobs": "true"}, timeout=18,
+        )
+        response.raise_for_status()
+        data = response.json()
+        files = []
+        for sibling in data.get("siblings", []) if isinstance(data, dict) else []:
+            name = str(sibling.get("rfilename") or "")
+            if not name.lower().endswith(".gguf"):
+                continue
+            lfs = sibling.get("lfs") if isinstance(sibling.get("lfs"), dict) else {}
+            size = sibling.get("size") or lfs.get("size") or 0
+            try:
+                size = int(size)
+            except (TypeError, ValueError):
+                size = 0
+            files.append({
+                "name": name,
+                "size_bytes": size,
+                "sha256": lfs.get("sha256") or sibling.get("blobId") or "",
+                "download_url": f"https://huggingface.co/{repo}/resolve/main/{quote(name, safe='/')}?download=true",
+            })
+        files.sort(key=lambda x: (x["size_bytes"] or 10**18, x["name"].lower()))
+        return jsonify({"ok": True, "repo": repo, "files": files[:80], "license": (data.get("cardData") or {}).get("license", "Check model card")})
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": "Could not retrieve files from Hugging Face: " + str(exc)[:160]}), 502
+
+
+@app.post("/api/model-tools/search")
+def local_model_search_tool():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query", "")).strip()[:180]
+    if not query:
+        return jsonify({"ok": False, "error": "Search query is empty."}), 400
+    try:
+        return jsonify({"ok": True, "results": (agent.web_search(query) or [])[:6]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:180]}), 502
+
+
+@app.post("/api/model-tools/wikipedia")
+def local_model_wikipedia_tool():
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query", "")).strip()[:180]
+    if not query:
+        return jsonify({"ok": False, "error": "Search query is empty."}), 400
+    try:
+        result = wikipedia_search(query)
+        return jsonify({"ok": bool(result), "result": result or {"error": "No matching Wikipedia summary was found."}})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:180]}), 502
+
+
+@app.post("/api/model-tools/command")
+def local_model_command_tool():
+    payload = request.get_json(silent=True) or {}
+    command = str(payload.get("command", "")).strip()[:240]
+    prefs = payload.get("prefs") if isinstance(payload.get("prefs"), dict) else {}
+    if not command:
+        return jsonify({"ok": False, "error": "Command is empty."}), 400
+    try:
+        result = process_local_command(command, prefs)
+        if result is None:
+            return jsonify({"ok": True, "recognized": False, "reply": "No matching built-in AXO command was found. Do not claim an action was completed."})
+        return jsonify({"ok": True, "recognized": True, "result": result})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:180]}), 400
 
 
 @app.get("/api/voice")

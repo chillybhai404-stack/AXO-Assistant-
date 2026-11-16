@@ -107,3 +107,24 @@ The encyclopedia path is source-first: a clear Wikipedia summary is shown with i
 ### User data files
 
 The release ZIP intentionally excludes `notes.json` and any `.env` file so saved personal notes and local secrets are not bundled into a code archive. The app will recreate its notes file when a note is saved. Keep a private backup of any existing `notes.json` you need to preserve; do not commit it to GitHub.
+
+## AXO Local Model Library (V18 update)
+
+- Open **Model library** from the sidebar to see three starter GGUF models. The weights are not bundled in the project; users download a selected file from its publisher when they choose it.
+- Search uses the public Hugging Face model API and filters repository names to models whose parameter count can be identified as 14B or smaller. This is a catalogue filter, not a guarantee that every result will run on the current device.
+- GGUF files are stored in the browser's Origin Private File System (OPFS), with a small model registry in IndexedDB. Clear browser/site data and the downloaded models may be removed.
+- The local runtime uses `@wllama/wllama` 3.13.0 from jsDelivr. An internet connection is required the first time the runtime module/WASM is fetched. Actual model inference is intended to run on-device after the GGUF file has been downloaded.
+- The browser build downloads single GGUF files smaller than 1.85 GB and complete split-model groups when every shard is below 1.85 GB. An oversized single-file GGUF cannot be loaded through this browser path. Wllama documents a 2GB ArrayBuffer limit for a single file and supports loading split models from multiple blobs.
+- **AI runtime** in Settings supports Auto, Local model only, and API only. Auto prefers a loaded local model and otherwise uses the existing API path. API mode and existing provider settings remain available.
+- Local tool use can search the public web, look up Wikipedia, run supported built-in AXO commands, set one-time reminders and create daily/one-time in-app schedules. Schedules run while AXO is open. Account-bound integrations and full connected-account agent workflows should use API mode; the existing API confirmation flow remains unchanged.
+- Web search sends the search query to AXO's backend and the public search provider. Normal local-model prompts and chat context are passed to the local browser runtime rather than the AXO server. Review connected-service and public-search privacy before use.
+- For responsive local inference, the Flask server adds Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers so Chromium can enable SharedArrayBuffer/threaded WebAssembly where supported. Browsers may still fall back to single-thread mode. WebGPU is runtime/device-dependent.
+- The discovery filter is capped at 14B parameters, but a 14B catalogue entry does not imply that it will run on a phone. Memory and storage usage depend on quantization, context length, runtime overhead and other apps. This device-specific limit is not inferred automatically. For larger models, prefer API mode or a suitable native inference runtime.
+
+### Local model starter catalogue
+
+The starter list is metadata-only and points to the publishers' public Hugging Face repositories: Qwen2.5 0.5B Instruct Q4_K_M, Qwen2.5 1.5B Instruct Q4_K_M, and Qwen2.5 Coder 3B Instruct Q3_K_M. Confirm the current repository file list and licence before redistribution; AXO downloads the files for personal use and does not redistribute model weights.
+
+### Testing note
+
+Static checks cover Python compilation and JavaScript syntax. This source bundle has not been run on physical Android hardware here, and the live Hugging Face download, Wllama CDN/WASM initialization, real GGUF inference, OPFS quota behavior, WebGPU availability, and tool-calling quality remain runtime tests to perform after deployment. Local tool calling also depends on the selected model's support for structured tool-call output.
