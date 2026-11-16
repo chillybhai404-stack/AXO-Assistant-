@@ -22,6 +22,7 @@
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.8-.7a8 8 0 0 1-1.8 1l-.3 1.9h-2.8l-.3-1.9a8 8 0 0 1-1.8-1l-1.8.7-1.4-2.4 1.5-1.2a8 8 0 0 1 0-2l-1.5-1.2 1.4-2.4 1.8.7a8 8 0 0 1 1.8-1l.3-1.9h2.8l.3 1.9a8 8 0 0 1 1.8 1l1.8-.7 1.4 2.4-1.5 1.2a8 8 0 0 1 0 2Z"/></symbol>
     <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.5 9.5 0 0 1-4-.9L3 21l1.8-4.1A8.3 8.3 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></symbol>
@@ -49,6 +50,7 @@
       <div class="history-list" id="chatHistoryList" aria-label="Saved conversations"></div>
       <div class="sidebar-bottom">
         <div class="sidebar-tools-heading">YOUR SPACE</div>
+        <button class="side-tool" data-panel="models" type="button"><svg class="icon"><use href="#i-download"/></svg><span>Model library</span></button>
         <button class="side-tool" data-panel="news" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>News</span></button>
         <button class="side-tool" data-panel="apis" type="button"><svg class="icon"><use href="#i-search"/></svg><span>API library</span></button>
         <button class="side-tool" data-panel="apps" type="button"><svg class="icon"><use href="#i-globe"/></svg><span>Apps</span></button>
@@ -153,6 +155,31 @@
           <label class="setting-row"><span><strong>Conversation mode</strong><small>Swap direction after each sentence so two people can talk.</small></span><input id="trConv" type="checkbox" class="toggle-input"></label>
           <div id="trLog"></div>
         </section>
+        <section class="panel secondary-panel" id="panel-models">
+          <div class="section-heading"><div><span class="section-eyebrow">ON-DEVICE AI</span><h1>Model library</h1><p>Browse GGUF models, download them to this device, and use them without an API key.</p></div><span class="section-live"><i></i> LOCAL RUNTIME</span></div>
+          <div class="model-runtime-card">
+            <div><span class="model-runtime-label">ACTIVE MODEL</span><strong id="activeLocalModel">No local model loaded</strong><small id="localRuntimeStatus">Choose a model below. Your API connection remains available.</small></div>
+            <button class="pill-button" id="modelApiSettings" type="button">AI settings</button>
+          </div>
+          <div class="model-toolbar">
+            <input id="modelSearch" type="search" placeholder="Search Hugging Face GGUF models (up to 14B)…" autocomplete="off">
+            <button class="pill-button go" id="modelSearchGo" type="button">Search</button>
+          </div>
+          <p class="model-library-note">Three starter models are listed below as soon as AXO opens. Search adds public Hugging Face GGUF repositories up to 14B parameters. Model weights are downloaded only when you choose them.</p>
+          <div class="model-library-heading"><div><h2>Starter models</h2><span>Curated starting points</span></div><span id="modelFeaturedCount"></span></div>
+          <div class="model-grid" id="modelFeatured"><div class="empty-state">Loading starter models…</div></div>
+          <div class="model-library-heading model-search-heading"><div><h2>Search results</h2><span id="modelSearchSummary">Explore the public GGUF catalogue</span></div></div>
+          <div class="model-grid" id="modelSearchResults"><div class="empty-state">Search for a model family, such as Qwen, Gemma or Llama.</div></div>
+          <div class="model-library-heading"><div><h2>My downloaded models</h2><span>Saved on this browser/device</span></div><span id="myModelCount">0 models</span></div>
+          <div class="model-grid" id="myDownloadedModels"><div class="empty-state">Downloaded models will appear here.</div></div>
+          <div class="model-progress-wrap" id="modelProgressWrap" hidden>
+            <div class="model-progress-top"><strong id="modelProgressLabel">Preparing download…</strong><span id="modelProgressPct">0%</span></div>
+            <div class="model-progress-track"><i id="modelProgressBar"></i></div>
+            <small id="modelProgressDetail">The model is saved in this browser's private origin storage.</small>
+            <button class="pill-button" id="cancelModelDownload" type="button">Cancel download</button>
+          </div>
+          <div class="model-library-footnote">Local inference uses the browser's WebAssembly/WebGPU runtime. Large models need substantial memory and storage; 14B entries may be browseable but not practical on an 8GB phone. A single GGUF file above the browser runtime's 2GB ArrayBuffer limit is not offered for direct download; complete split-model groups are supported when every shard is below 1.85GB. Even then, very large models may not fit phone memory. Use API mode for larger models on mobile. Internet tools send only the search query to AXO's backend; the local chat itself stays on this device.</div>
+        </section>
         <section class="panel secondary-panel" id="panel-news">
           <div class="section-heading"><div><span class="section-eyebrow">YOUR SPACE</span><h1>News</h1><p>Current headlines from connected news sources.</p></div><span class="section-live"><i></i> LIVE FEED</span></div>
           <div class="filter-row" id="newsFilters"><button class="filter active" data-category="general" type="button">Top</button><button class="filter" data-category="technology" type="button">Technology</button><button class="filter" data-category="business" type="button">Business</button><button class="filter" data-category="science" type="button">Science</button><button class="filter" data-category="sports" type="button">Sports</button><button class="filter" data-category="entertainment" type="button">Entertainment</button></div>
@@ -243,7 +270,9 @@
           <div class="setting-row"><span><strong>Video links</strong><small id="videoCount">Add videos with a name and link.</small></span><button class="pill-button" data-go="videos" type="button">Manage</button></div>
         </section>
         <section class="sp-sec" id="sec-ai"><h3>AI & API</h3>
-          <p class="settings-footnote">Connect an API provider for AXO's built-in AI agent. You can also open ChatGPT, Claude or Gemini in their official websites without adding an API key to AXO.</p>
+          <p class="settings-footnote">Choose on-device GGUF inference or keep using a cloud API. The API path remains available for full connected-account agent workflows. A local model can use AXO's public search, Wikipedia, reminders, schedules and supported local commands through tool calls.</p>
+          <label class="setting-row"><span><strong>AI runtime</strong><small>Auto uses a loaded local model first, then your configured API. API only keeps the cloud agent path.</small></span><select id="aiMode"><option value="auto">Auto · local first, API fallback</option><option value="local">Local model only</option><option value="api">API only</option></select></label>
+          <div class="setting-row"><span><strong>Choose local models</strong><small>Browse and download GGUF models on this device.</small></span><button class="pill-button" id="openModelLibrary" type="button">Open model library</button></div>
           <h4 class="int-h">Browser AI assistants</h4>
           <div class="ai-browser-grid">
             <article class="ai-browser-card"><span class="ai-brand"><img src="https://cdn.simpleicons.org/openai/10A37F" alt="OpenAI logo" loading="lazy"></span><div><strong>ChatGPT</strong><small>Open the official ChatGPT website. No AXO API key required.</small></div><button type="button" data-ai-handoff="chatgpt">Copy AXO context &amp; open</button></article>
@@ -254,7 +283,7 @@
           <label class="setting-row"><span><strong>Agent mode</strong><small>Let the AI call AXO tools for multi-step tasks. Turn off for simple chat only.</small></span><input id="aiAgent" type="checkbox" class="toggle-input"></label>
           <label class="setting-row"><span><strong>AI provider</strong><small>Choose the service that issued your key.</small></span><select id="aiProvider"><option value="auto">Auto-detect from key</option><option value="openrouter">OpenRouter</option><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="custom">Custom OpenAI-compatible</option></select></label>
           <label class="setting-row"><span><strong>API key</strong><small>Use a key from the provider you selected. Never paste it into a chat message.</small></span><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your API key"></label>
-          <label class="setting-row"><span><strong>Model ID</strong><small>Leave blank to use AXO's provider default.</small></span><input id="aiModel" list="aiModels" autocomplete="off" placeholder="e.g. openrouter/free"><datalist id="aiModels"></datalist></label>
+          <label class="setting-row"><span><strong>API model ID</strong><small>Used only in API mode; leave blank for the provider default.</small></span><input id="aiModel" list="aiModels" autocomplete="off" placeholder="e.g. openrouter/free"><datalist id="aiModels"></datalist></label>
           <label class="setting-row" id="aiUrlRow"><span><strong>Custom API URL</strong><small>Base URL or full /chat/completions endpoint.</small></span><input id="aiUrl" inputmode="url" placeholder="https://your-provider.example/v1"></label>
           <div class="setting-row"><span><strong>Available models</strong><small id="modelFetchMsg">Fetch the models supported by this key.</small></span><button class="pill-button" id="fetchModels" type="button">Fetch models</button></div>
           <div class="setting-row"><span><strong>Test connection</strong><small id="aiTestMsg">Checks your key, endpoint and model.</small></span><button class="pill-button" data-test="ai" type="button">Test</button></div>
@@ -386,8 +415,8 @@
           <p class="settings-footnote">AXO does not claim end-to-end encryption, anonymous account access, or automatic deletion from third-party providers. This summary describes the current app build; hosting and provider retention are governed by those services.</p>
         </section>
         <section class="sp-sec" id="sec-about"><h3>About AXO</h3>
-          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant · v16</strong><small>Personal assistant by AXU</small></div></div>
-          <p class="settings-footnote">AXO combines a Python/Flask backend, a browser interface, public-data tools and optional AI connections. Core commands such as calculations, selected public lookups and app shortcuts can run without an AI API key. AI-powered reasoning depends on a provider connection or a supported external AI website handoff.</p>
+          <div class="about-card"><img src="{{ url_for('static', filename='logo.png') }}" alt="AXO"><div><strong>AXO Assistant · v18</strong><small>Personal assistant by AXU</small></div></div>
+          <p class="settings-footnote">AXO combines a Python/Flask backend, a browser interface, public-data tools, an optional on-device GGUF runtime and cloud AI connections. Local models run in this browser when supported. Cloud API mode remains available for connected-account agent actions and larger models.</p>
           <h4 class="int-h">AXO Bots</h4>
           <div class="privacy-card"><div class="privacy-symbol" data-icon="bot"></div><div><strong>Personal bots and bot teams</strong><p>Create focused assistants with their own names, instructions, knowledge notes, links and visual identity. Bots can use permitted AXO tools, and teams can pass one bot's result to the next as a workflow. Bot conversations and definitions are saved in this browser unless you export or sync them.</p><button type="button" class="pill-button" data-panel-jump="bots">Open bot studio</button></div></div>
           <div class="privacy-card"><div class="privacy-symbol" data-icon="puzzle"></div><div><strong>Tools, plugins and integrations</strong><p>AXO's agent can use approved tools such as public search, notes, weather, charts and connected Gmail, GitHub or Firebase functions. Sending messages, editing external records or other consequential actions may ask for confirmation. A browser shortcut is not the same as an API integration.</p></div></div>
@@ -424,6 +453,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="{{ url_for('static', filename='icons.js') }}"></script>
+  <script src="{{ url_for('static', filename='model-library.js') }}"></script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   <script src="{{ url_for('static', filename='extra.js') }}"></script>
   <script src="{{ url_for('static', filename='extra2.js') }}"></script>
